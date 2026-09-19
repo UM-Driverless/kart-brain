@@ -70,6 +70,11 @@ class DashboardNode(Node):
         self.declare_parameter("password", "0")
         self.port = self.get_parameter("port").value
         self.password = self.get_parameter("password").value
+        self.declare_parameter("use_hall_speed", True)
+        self.declare_parameter("hall_edges_per_metre", 0.0)
+        self._use_halls = self.get_parameter("use_hall_speed").value
+        self.state.configure_hall_speed(
+            self.get_parameter("hall_edges_per_metre").value, self._use_halls)
 
         qos_reliable = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
         qos_best_effort = QoSProfile(
@@ -275,12 +280,13 @@ class DashboardNode(Node):
 
     def _on_esp_speed(self, msg: Frame):
         """@brief Callback for ESP32 speed frames. Decodes speed in m/s."""
-        if msg.payload:
+        if msg.payload and not self._use_halls:
             self.state.update("esp32_speed", decode_speed(list(msg.payload)))
 
     def _on_kart_speed(self, msg):
         """@brief Callback for ZED VIO speed (Float32, m/s). Updates same state key as ESP32 speed."""
-        self.state.update("esp32_speed", round(msg.data, 2))
+        if not self._use_halls:
+            self.state.update("esp32_speed", round(msg.data, 2))
 
     def _on_esp_accel(self, msg: Frame):
         """@brief Callback for ESP32 acceleration frames. Decodes lateral and longitudinal acceleration."""
@@ -349,8 +355,10 @@ class DashboardNode(Node):
 
     def _on_esp_health_data(self, msg: Frame):
         """@brief Callback for the numeric half of the ESP32 health frame."""
-        for k, v in decode_health_data(list(msg.payload)).items():
+        decoded = decode_health_data(list(msg.payload))
+        for k, v in decoded.items():
             self.state.update(k, v)
+        self.state.hall_sample(decoded if "hall_init_err" in decoded else None)
 
     def _on_esp_steer_pid(self, msg: Frame):
         """@brief Callback for the ESP32's 1 Hz report of the steering gains in force.

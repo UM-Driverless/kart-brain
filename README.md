@@ -31,6 +31,19 @@ Requires [cloudflared](https://developers.cloudflare.com/cloudflare-one/connecti
 
 Default password: `0` (set via the `password` ROS param on `kb_dashboard`).
 
+The hardware speed dial uses the three motor Hall counters from Medulla's extended
+health frame. Set `hall_edges_per_metre` in `src/kb_dashboard/config/hall_speed.yaml`
+to a measured value: sum the increase in all three counters over a known rolling
+distance, then divide by metres travelled. Keep the drivetrain engaged, move in
+one direction, and check that all three channels count without multiple-bit changes.
+Rebuild `kb_dashboard` and restart the dashboard after changing this installed config.
+The default `0.0` means uncalibrated, not zero speed. System → Motor Halls shows the
+raw states, counters, rate and calibration. Missing/stale signals show `--` on the
+dial; no transitions cannot distinguish a stopped motor from a disconnected sensor.
+Speed is an unsigned, roughly one-second average using telemetry arrival times,
+not direction or control feedback. All three channels must advance in an interval;
+very slow movement can therefore show no speed. Simulation retains its existing source.
+
 To make the LAN path reliable, give the Orin a **static DHCP reservation** on your router (or set a static IP via NetworkManager on the Orin) so the URL doesn't change between sessions.
 
 ## Hardware

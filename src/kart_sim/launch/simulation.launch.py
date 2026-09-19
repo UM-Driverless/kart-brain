@@ -243,7 +243,7 @@ def _launch_setup(context):
         package="kb_dashboard",
         executable="dashboard",
         name="kb_dashboard",
-        parameters=[{"port": 9090}],
+        parameters=[{"port": 9090, "use_hall_speed": False}],
         output="screen",
     )
 

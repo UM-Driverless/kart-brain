@@ -1989,3 +1989,44 @@ the CUDA timeline against the CPU when the question is "who is waiting for whom"
 (line 527) lists it as enabled, and the CPU governor is `schedutil`, not `performance`.
 Clocks happened to be at their caps when sampled, so this did not cost anything here — but
 the checklist item is not actually satisfied.
+
+## 2026-09-19 — Hall-speed dashboard bench state
+
+The ESP32-S3 is installed in the Medulla PCB and connected to the Mac through its
+USB-UART bridge at `/dev/cu.usbmodem5C372070281`. Rubén confirms nothing else is
+connected to the PCB. Firmware `f4ac188` captures the three Hall inputs and sends
+eight diagnostic fields appended to the health frame. Bare-board telemetry was
+verified in kart-medulla: initialization succeeds, states and counters remain zero.
+There is no motor signal available for speed calibration in this setup.
+
+Dashboard integration is being prepared on `dev`. SSH to `orin-remote` closed
+before login, and `orin-local` and `utm` timed out; deployment requires those
+machines to become reachable. The local untracked `live.png` predates this work.
+
+The dashboard now derives speed magnitude from the sum of counter deltas divided
+by host-monotonic elapsed time and `hall_edges_per_metre`. It uses health packets
+(nominally 1 Hz), so this is a display average, not a motor-control feedback signal.
+Calibration defaults to zero (unknown). All three channels must advance during
+the sample interval; missing transitions, changed multi-bit counters, resets,
+malformed fields and stale telemetry suppress the number. An unchanged cumulative
+multi-bit counter does not permanently suppress later good samples. No direction
+or six-state commutation sequence is assumed. Hardware launch files load the shared
+config; simulation explicitly keeps its external speed source. Other speed topics
+cannot overwrite the hardware Hall display. No control behavior was changed.
+
+Local verification: `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src/kb_dashboard uv run
+--no-project --with pytest --with 'websockets==11.0.3' --with pyserial pytest -q
+src/kb_dashboard/test` passed 219 tests. A headless browser check at 1280×800 and
+844×390 exercised all six pages, a synthetic 3 m/s sample (dial rounds 10.8 km/h to
+11), six unavailable states and the browser stale timeout, with no JavaScript errors.
+Telemetry/System screenshots were visually inspected at both sizes. Changed Python
+files parsed successfully and `git diff --check` passed. The authentication test's
+old substring assertion incorrectly rejected an existing HTML comment containing
+“login”; it now compares the served page with the actual dashboard file.
+
+The live-board check could not run: `/dev/cu.*` listed only Bluetooth-Incoming-Port
+and debug-console when checked during dashboard testing. No USB serial device was
+available. ROS launch/build checks and deployment remain unverified because both
+target machines were unreachable. Next physical check: reconnect the board and
+motor Halls with actuator power isolated, measure summed edges per metre with the
+drivetrain engaged, set the config, then compare indicated speed with timed travel.

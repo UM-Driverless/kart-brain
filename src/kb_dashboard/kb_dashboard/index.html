@@ -331,6 +331,7 @@ const $ = id => document.getElementById(id);
 const deg = r => (r * 180 / Math.PI).toFixed(1);
 const WS_URL = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/`;
 let ws = null, reconnectTimer = null, lastData = null, skinCleanup = null;
+let lastTelemetryAt = 0;
 let manualSteerType = 'angle'; // 'angle' or 'pwm'
 let currentMission = 'manual'; // Track mission state locally to show/hide widget
 // Demo mode (?demo=1): no backend, so mission/state changes are simulated locally.
@@ -817,6 +818,8 @@ function connect() {
   ws.onclose = (ev) => {
     if (typeof dbgLog==='function') dbgLog('WS CLOSE code='+ev.code+' reason='+ev.reason+' clean='+ev.wasClean);
     const d = $('connDot'); if (d) d.classList.remove('ok');
+    if (!new URLSearchParams(location.search).has('demo'))
+      renderSpeed({esp32_speed:null, speed_source:'motor_halls', hall_status:'stale'});
     // A socket that dies right after an accepted power-off IS the power-off completing —
     // report it as the finished state instead of the generic reconnect churn, and stop
     // retrying, because a machine that is off will not answer until a human presses its
@@ -859,6 +862,7 @@ function connect() {
       // Reflect ESP32 heartbeat in the connection dot (green only when HB alive)
       const d = $('connDot');
       if (d) { if (lastData.esp32_heartbeat) d.classList.add('ok'); else d.classList.remove('ok'); }
+      lastTelemetryAt = performance.now();
       try { skinRace.update(lastData); } catch {}
       try { updateHealth(lastData); } catch {}
       try { updateControllerStatus(lastData); } catch {}
@@ -1544,6 +1548,36 @@ function rcDrawClock(canvas) {
 }
 const RC_DIAL_SPEED = { min: 0, max: 50, major: 10, minor: 5, numbers: true, topLabel: 'KM/H',
   fmt: v => v.toFixed(0) };
+
+function speedPresentation(d) {
+  const labels = {
+    no_data:'No Hall telemetry', unsupported:'Firmware lacks Hall data',
+    capture_error:'Hall capture failed', no_edges:'No Hall transitions',
+    uncalibrated:'Calibration needed', warming_up:'Waiting for all 3 Halls',
+    moving:'Motor Halls · speed magnitude', ambiguous:'Ambiguous Hall transitions',
+    counter_reset:'Hall counters reset', stale:'Hall telemetry stale', invalid:'Invalid Hall data'
+  };
+  const halls = d.speed_source === 'motor_halls';
+  const valid = Number.isFinite(d.esp32_speed) && (!halls || d.hall_status === 'moving');
+  return {kmh:valid ? Math.abs(d.esp32_speed) * 3.6 : null,
+          label:halls ? (labels[d.hall_status] || labels.no_data)
+                      : d.speed_source === 'demo' ? 'Demo speed' : 'External speed source'};
+}
+
+function renderSpeed(d) {
+  const speed = speedPresentation(d), dial = $('rcSpeedDial');
+  rcDrawGauge(dial, RC_DIAL_SPEED, speed.kmh);
+  if (dial) dial.setAttribute('aria-label', speed.kmh == null
+      ? 'Speed unavailable: ' + speed.label : speed.kmh.toFixed(1) + ' km/h; ' + speed.label);
+  if ($('rcSpeedStatus')) $('rcSpeedStatus').textContent = speed.label;
+  if ($('rcHallStatus')) $('rcHallStatus').textContent = speed.label;
+}
+
+setInterval(() => {
+  if (lastTelemetryAt && performance.now() - lastTelemetryAt > 3000
+      && !new URLSearchParams(location.search).has('demo'))
+    renderSpeed({esp32_speed:null, speed_source:'motor_halls', hall_status:'stale'});
+}, 500);
 // PACK current (whole 13S4P pack, = 4× per-cell), bidirectional. Sign per the JBD BMS convention:
 // POSITIVE = CHARGE (regen / plugged in), NEGATIVE = DISCHARGE (motoring). The dial states this
 // itself — static "PACK AMPS" top label + a dynamic CHARGE/DISCHARGE/IDLE caption.
@@ -1965,6 +1999,7 @@ body{
    little and seats the G dial in the gap that the 54% cap already left below it. */
 .rc-speeddial{ display:flex; flex-direction:column; align-items:center; justify-content:space-evenly; gap:var(--sp-1); padding:var(--sp-3) var(--sp-2) var(--sp-2); }
 #rcSpeedDial{ max-height:54%; max-width:82%; width:auto; height:auto; }
+#rcSpeedStatus{ font-size:var(--fs-xs); color:var(--rc-label); text-align:center; flex:none; }
 /* The G block keeps its own stacking context so the "G" tag pins to the dial, not to the panel.
    Its old tag was positioned against the mini cell it used to sit in, so reusing that rule here
    would have parked the letter next to the "Speed" label instead. */
@@ -2592,6 +2627,7 @@ body{
         <div class="rc-panel rc-speeddial">
           <span class="rc-label">Speed</span>
           <canvas id="rcSpeedDial" width="300" height="300"></canvas>
+          <span id="rcSpeedStatus">No Hall telemetry</span>
           <!-- The G-G dial lives here, under the speedo, rather than in the minis grid. The
                speedo is capped at 54% of the panel height, so the lower half of this panel was
                already empty; space-evenly lifts the speedo just enough to seat the G block in
@@ -2731,6 +2767,7 @@ body{
 
       <div class="race-page rc-system">
         <div class="rc-sysgrid">
+        <div class="rc-card"><div class="row1"><span class="rc-label">Motor Halls</span><span class="val num rc-sysval" id="rcHallBits">--</span></div><div class="rc-sysdesc"><span id="rcHallStatus">No Hall telemetry</span><br>Edges H1 / H2 / H3: <span id="rcHallCounts">--</span><br><span id="rcHallRate">--</span> edges/s · scale <span id="rcHallScale">not set</span><br>Multiple-bit changes: <span id="rcHallMulti">--</span></div></div>
         <div class="rc-card"><div class="row1"><span class="rc-label">Steering sensor</span><span class="val num rc-sysval" id="rcSysMag">--</span></div><div class="rc-sysdesc">MT6701 encoder read over PWM · <span id="rcSysSteerNote">--</span></div></div>
         <div class="rc-card"><div class="row1"><span class="rc-label">Old I2C sensor bus</span><span class="val num rc-sysval" id="rcSysI2c">--</span></div><div class="rc-sysdesc"><span id="rcSysI2cNote">--</span> · magnet signal strength <span id="rcSysAgc">--</span></div></div>
         <div class="rc-card"><div class="row1"><span class="rc-label">ESP32 free memory</span><span class="val num rc-sysval" id="rcSysHeap">--</span></div><div class="rc-sysdesc">spare memory on the ESP32; running out makes the firmware reboot on its own</div></div>
@@ -3011,7 +3048,7 @@ body{
     if (dbg) { $('rcDbgSlot').appendChild(dbg); if (!dbgOpen) toggleDbg(); }  // show it expanded on the System page
     drawCenital($('rcCenital'), []);
     drawGG(0, 0, '#2c2c2f', '#84848a40', '#e2001a', 8);
-    rcDrawGauge($('rcSpeedDial'), RC_DIAL_SPEED, 0);
+    renderSpeed({esp32_speed:null, speed_source:'motor_halls', hall_status:'no_data'});
     rcDrawGauge($('rcDialYolo'), RC_DIAL_YOLO, 0);
     rcDrawGauge($('rcBatDial'), RC_DIAL_SOC, NaN);
     rcDrawRing($('rcBatRing'), { frac: 0, color: '#33d17a', dim: true, label: 'SOC', big: '--' });
@@ -3074,8 +3111,14 @@ body{
     else if (degAct >= 0) { df.style.left = '50%'; df.style.width = (dirPct - 50) + '%'; }
     else { df.style.left = dirPct + '%'; df.style.width = (50 - dirPct) + '%'; }
     // speed hybrid dial (value shown in the dial centre)
-    const kmh = (d.esp32_speed || 0) * 3.6;
-    rcDrawGauge($('rcSpeedDial'), RC_DIAL_SPEED, kmh);
+    renderSpeed(d);
+    $('rcHallStatus').textContent = speedPresentation(d).label;
+    $('rcHallBits').textContent = Number.isInteger(d.hall_bits) && d.hall_bits >= 0
+      ? [0,1,2].map(i => (d.hall_bits >> i) & 1).join(' / ') : '--';
+    $('rcHallCounts').textContent = Array.isArray(d.hall_edges) ? d.hall_edges.join(' / ') : '--';
+    $('rcHallRate').textContent = Number.isFinite(d.hall_edge_rate_hz) ? d.hall_edge_rate_hz.toFixed(1) : '--';
+    $('rcHallScale').textContent = d.hall_edges_per_metre > 0 ? d.hall_edges_per_metre + ' edges/m' : 'not set';
+    $('rcHallMulti').textContent = d.hall_multi_changes ?? '--';
     const lonG = (d.esp32_accel_lon || 0) / 9.81, latG = (d.esp32_accel_lat || 0) / 9.81;
     // targets ride the same instruments: amber needle on the steering gauge
     // (above), amber needles in the pedals dial, PWM readout under the gauge
@@ -3463,6 +3506,7 @@ if (new URLSearchParams(location.search).has('demo')) {
       esp32_steering_valid: true,
       esp32_steering_rad: st, orin_cmd_steering_rad: tst, esp32_steering_pwm: (tst - st) * 1.5,
       esp32_speed: sp / 3.6,
+      speed_source: 'demo',
       esp32_accel_lon: lon * 4.9, esp32_accel_lat: -st * sp * 0.2,
       esp32_throttle: th, esp32_braking: br, esp32_brake_pedal: br,
       orin_cmd_throttle: Math.min(1, th + 0.08), orin_cmd_brake: br,

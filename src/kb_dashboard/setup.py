@@ -10,6 +10,7 @@ setup(
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
         ("share/" + package_name + "/launch", ["launch/dashboard.launch.py"]),
+        ("share/" + package_name + "/config", ["config/hall_speed.yaml"]),
     ],
     # The icons ship beside index.html because the Home Screen icon cannot be a data: URI —
     # iOS ignores those for apple-touch-icon, so it has to be a real URL the server answers.

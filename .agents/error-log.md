@@ -721,3 +721,11 @@ two are opposites: zero is the strongest possible command to move. Whenever a st
 comment, at the point it is written.
 
 **Fix.** Not applied here — written up in `tasks.md` for Fable to implement, at Rubén's request.
+
+## 2026-09-19 — Incomplete dashboard browser fixture (GPT-6 Astra)
+
+The first Hall-speed browser test passed only Hall fields to `skinRace.update`.
+The existing state-pill renderer requires the full dashboard snapshot and threw on
+the absent `state` field. The harness now starts from `DashboardState.snapshot()`
+and overrides the tested fields. The repeated check passed at both screen sizes;
+use the real default snapshot for future partial-telemetry browser fixtures.

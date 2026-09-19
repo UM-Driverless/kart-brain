@@ -1,0 +1,7 @@
+kb_dashboard:
+  ros__parameters:
+    use_hall_speed: true
+    # Sum of rising + falling edges across all three motor Hall channels per metre.
+    # Measure by rolling a known distance in one direction and dividing the total
+    # count increase by that distance. 0.0 means uncalibrated, never assume a scale.
+    hall_edges_per_metre: 0.0

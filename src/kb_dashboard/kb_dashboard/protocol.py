@@ -12,6 +12,8 @@ The framing (SOF/LEN/TYPE/CRC) is unchanged — only payload encoding changed.
 import threading
 import time
 
+from kb_dashboard.hall_speed import HallSpeed
+
 # Frame type constants (from kb_interfaces/msg/Frame)
 ESP_ACT_SPEED = 0x01
 ESP_ACT_ACCELERATION = 0x02
@@ -232,6 +234,16 @@ def decode_health_data(payload) -> dict:
         # ambiguity that made a stale latch look like a sensor failure on
         # 2026-08-08. None here means the firmware predates the field.
         out["health_steer_trip_age_s"] = payload[5]
+    # The ROS numeric health topic omits the firmware's leading flags word.
+    if len(payload) >= 14:
+        out.update({
+            "hall_init_err": payload[6],
+            "hall_bits": payload[7],
+            "hall_edges": [v & 0xFFFFFFFF for v in payload[8:11]],
+            "hall_age_ms": payload[11],
+            "hall_interval_us": payload[12],
+            "hall_multi_changes": payload[13] & 0xFFFFFFFF,
+        })
     return out
 
 
@@ -629,7 +641,8 @@ class DashboardState:
             "esp32_heartbeat": False,
             "esp32_heartbeat_age": -1.0,
             "esp32_steering_rad": 0.0,
-            "esp32_speed": 0.0,
+            "esp32_speed": None,
+            "speed_source": "unavailable",
             "esp32_accel_lat": 0.0,   # lateral acceleration (m/s^2), positive = right
             "esp32_accel_lon": 0.0,   # longitudinal acceleration (m/s^2), positive = forward
             "esp32_throttle": 0.0,    # accelerator pedal 0.0-1.0 (ESP_PEDALS effort)
@@ -690,6 +703,19 @@ class DashboardState:
             "target_speed": 0.28,  # m/s setpoint for constant_speed (1 km/h)
         }
         self._heartbeat_time = 0.0
+        self._hall = None
+
+    def configure_hall_speed(self, edges_per_metre=0.0, enabled=True):
+        """Select the display's speed source; zero scale means uncalibrated."""
+        tracker = HallSpeed(edges_per_metre) if enabled else None
+        with self.lock:
+            self._hall = tracker
+            self.data["speed_source"] = "motor_halls" if enabled else "legacy"
+
+    def hall_sample(self, sample, now=None):
+        with self.lock:
+            if self._hall is not None:
+                self._hall.ingest(sample, time.monotonic() if now is None else now)
 
     def update(self, key, value):
         """@brief Thread-safe update of a single telemetry field.
@@ -713,6 +739,9 @@ class DashboardState:
         """
         with self.lock:
             d = dict(self.data)
+            if self._hall is not None:
+                d.update(self._hall.snapshot(time.monotonic()))
+                d["esp32_speed"] = d["hall_speed_mps"]
             if self._heartbeat_time > 0:
                 d["esp32_heartbeat_age"] = round(time.time() - self._heartbeat_time, 1)
                 d["esp32_heartbeat"] = d["esp32_heartbeat_age"] < 3.0

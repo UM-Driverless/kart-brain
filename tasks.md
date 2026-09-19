@@ -14,6 +14,21 @@ the archive whole, only once its last step closes.
 
 ## Ready
 
+- [⏸ calibration and target access] **Display calibrated motor-Hall speed and validate on the kart.**
+  Dashboard integration is implemented on `dev`, retaining raw counts and showing
+  no speed when uncalibrated, stale or without observed pulses. Local checks are
+  recorded in `history.md`; on-kart validation remains open.
+  No verified traction-motor pole count, current sprocket ratio or tire rolling
+  circumference was found in the records. Measure combined Hall edges per metre to
+  calibrate without guessing those values. The bare PCB is on the Mac with no sensors.
+  Orin/VM deployment is currently blocked by SSH connectivity (2026-09-19).
+  The Mac USB serial port also disappeared before the dashboard live-board check.
+
+- [ ] **Reconcile stale environment pointers.** README lists the dashboard LAN port
+  as 9090, but hardware launch files use 80. `.agents/README.md` lists old SSH/VM
+  addresses and claims hardware is always on the Orin, contradicted by the Mac bench
+  setup on 2026-09-19. Verify current target configuration before updating the pointers.
+
 - [ ] **Verify on the kart: steering stays unpowered after mission select until Start** (added 2026-08-10, follow-up to the powered-at-mission-select safety fix, `state_machine_node.py`). The logic is now covered by an invariant test suite (`src/kart_control/test/test_state_logic.py`, 161 tests, pure Python — runs on the Mac; the logic itself was extracted to `scripts/state_logic.py` with the node as a thin wrapper), plus a ROS integration test for the VM/Orin (`test/test_state_machine_launch.py`). Still to confirm on the kart: the column staying free while selecting AUTO, toggling Geometric ↔ None, and pressing Stop from driving. Three deliberate behavior changes to know about when testing:
   - `throttle_test` now requires Start before applying its fixed throttle (it used to apply 50% at mission select).
   - Changing mission while AS_DRIVING now latches AS_EMERGENCY instead of quietly dropping to AS_READY — a mission change mid-drive is treated as operator error; "reset" recovers.

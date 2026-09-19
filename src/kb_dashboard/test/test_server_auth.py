@@ -7,7 +7,7 @@ import urllib.parse
 import pytest
 
 from kb_dashboard.protocol import DashboardState
-from kb_dashboard.server import run_websocket_server
+from kb_dashboard.server import HTML_PATH, run_websocket_server
 
 
 class FakeNode:
@@ -154,7 +154,7 @@ class TestNoPassword:
         status, headers, body = _http_request(srv_no_password.port)
         assert "200 OK" in status
         # Should serve the actual dashboard HTML, not the login page
-        assert "Kart Dashboard" not in body or "login" not in body.lower()
+        assert body == HTML_PATH.read_text()
         assert "text/html" in headers.get("content-type", "")
 
 
