@@ -2030,3 +2030,11 @@ available. ROS launch/build checks and deployment remain unverified because both
 target machines were unreachable. Next physical check: reconnect the board and
 motor Halls with actuator power isolated, measure summed edges per metre with the
 drivetrain engaged, set the config, then compare indicated speed with timed travel.
+
+## 2026-09-19 — Hall-speed engineering documentation
+
+The README now links to kart-docs' firmware page, section `motor-hall-speed`, for
+the end-to-end capture, reporting, speed formula, calibration and validity limits.
+The physical Hall-power arrangement must be checked before a powered-sensor,
+unpowered-actuator rolling calibration; that prerequisite is tracked in `tasks.md`.
+No dashboard runtime or calibration value changed in this documentation update.

@@ -21,6 +21,9 @@ the archive whole, only once its last step closes.
   No verified traction-motor pole count, current sprocket ratio or tire rolling
   circumference was found in the records. Measure combined Hall edges per metre to
   calibrate without guessing those values. The bare PCB is on the Mac with no sensors.
+  Before rolling calibration, verify how the motor Halls can remain powered with
+  traction and steering actuator power isolated; the physical supply arrangement
+  has not been validated.
   Orin/VM deployment is currently blocked by SSH connectivity (2026-09-19).
   The Mac USB serial port also disappeared before the dashboard live-board check.
 

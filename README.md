@@ -32,7 +32,8 @@ Requires [cloudflared](https://developers.cloudflare.com/cloudflare-one/connecti
 Default password: `0` (set via the `password` ROS param on `kb_dashboard`).
 
 The hardware speed dial uses the three motor Hall counters from Medulla's extended
-health frame. Set `hall_edges_per_metre` in `src/kb_dashboard/config/hall_speed.yaml`
+health frame. The [Hall-speed explanation and calibration procedure](https://um-driverless.github.io/kart-docs/assembly/electronics/kart-medulla/firmware/#motor-hall-speed)
+covers the complete signal path and limitations. Set `hall_edges_per_metre` in `src/kb_dashboard/config/hall_speed.yaml`
 to a measured value: sum the increase in all three counters over a known rolling
 distance, then divide by metres travelled. Keep the drivetrain engaged, move in
 one direction, and check that all three channels count without multiple-bit changes.
