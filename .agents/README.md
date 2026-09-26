@@ -14,6 +14,7 @@ LLMs have no persistent memory between sessions. Every conversation starts fresh
 | File | Purpose |
 |---|---|
 | `architecture.md` | Package structure, node graph, message types, topic map, ESP32 UART routing & protocol |
+| `sensor-safety.md` | Sensor safety policy, fault and reset protocol, verification and physical validation limits |
 | `simulation.md` | Gazebo setup, known issues, rendering quirks, how to test |
 | `dashboard-testing.md` | Running the dashboard offline (`?demo=1`), driving its UI from a harness, and its layout/stylesheet traps |
 | `vm-environment.md` | UTM VM specifics: SSH, sudo, installed packages, limitations |

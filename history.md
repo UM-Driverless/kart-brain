@@ -2216,3 +2216,14 @@ state and reserves physical pedal ownership for manual OFF without a latch.
 `origin/main` had three historical merge/revert commits absent from dev but no
 content difference against their merge base; merging it into dev succeeded without
 changing the implementation before the safety commit.
+
+### 2026-09-26 — Safety rollout staged on the Orin
+
+`ssh orin-remote` verified brain revision `0b4693c`, firmware revision `a7386fb`,
+and an active kart-brain service. The real workspace build log
+`/tmp/kart-safety-install.log` reports four packages finished in 40.2 seconds:
+kb_interfaces, kart_control, kb_dashboard and kb_coms_micro. The firmware was not
+flashed and the running service was not restarted. Activation requires confirmed
+steering motor isolation before flashing, followed by a coordinated service restart
+and physical fault/braking/reset checks. The modified ZED-wrapper submodule on the
+Orin was left unchanged. VM deployment remains blocked by the recorded SSH timeout.
