@@ -14,6 +14,8 @@ the archive whole, only once its last step closes.
 
 ## Ready
 
+- [ ] **Refresh the selected mission after ESP32 reconnect or reboot.** `state_machine_node.py` publishes `/orin/mision` only when mission changes; repeated selections return before publishing. Firmware initializes `MISION_ORIN` to zero (Manual), so a lost mission frame or reboot can leave physical pedal control selected despite AUTO on the dashboard. Add periodic mission publication and verify recovery with zero throttle before any driving test.
+
 - [ ] **Expire stale controller commands before forwarding throttle.** Code review on 2026-09-26 reproduced 1000 calls to the production `_mux_tick` with no new autonomous command, all forwarding the cached 2.625 while driving. `state_machine_node.py` stores commands without timestamps, and `cmd_vel_bridge_node.py` also repeats its cached effort. Add command-age checks and regression tests at both boundaries; verify a stopped publisher produces zero throttle without relying on the serial-link watchdog.
 
 - [ ] **Allow blind throttle when perception is disabled at launch.** `kart_bringup/launch/launch.py` places `cone_follower` behind `IfCondition(perception)`, so `perception:=false` removes the producer of blind throttle despite the mode supporting absent detections. Separate controller availability from camera/perception startup and test the no-perception launch.

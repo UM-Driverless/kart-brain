@@ -2111,3 +2111,24 @@ hardware launch gates `cone_follower` on `perception`, so disabling perception
 also disables the blind-mode command producer. A Luna documentation worker was
 assigned the connector and related operating/troubleshooting documentation in
 the separate kart-docs repository.
+
+## 2026-09-26 — Pedal response despite Speed Zero
+
+Rubén reports the ESP32 follows the physical accelerator with dashboard Speed
+set to Zero; whether this describes motor/output voltage or only the green
+pedal indicator is awaiting clarification. Live `/orin/throttle` was `[0]`
+and `/kart/state` was AS_EMERGENCY. A later check found no
+`/dev/serial/by-id/` directory, with the comms journal reporting the configured
+CH343 device missing. No command or firmware change was made during this probe.
+
+Both local and Orin firmware source explicitly select the physical pedal when
+comms are stale or mission is Manual (`KM_GPIO_SetThrottleSource(false)`), and
+select the electronic output otherwise. Thus zero commanded throttle does not
+override pedal control during communication loss. The green dashboard bar reads
+`esp32_throttle` from the pedal sensor; the amber marker is `orin_cmd_throttle`.
+Neither is a measurement of the voltage reaching the motor controller.
+
+A separate verified code gap is that mission frames are sent only on mission
+changes; a reconnect or ESP32 restart can leave its zero-initialized Manual
+mission unchanged. This is a candidate explanation for the reported behavior,
+not a measured firmware mission value. It is recorded as a follow-up in tasks.md.
