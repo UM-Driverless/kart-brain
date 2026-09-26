@@ -741,3 +741,14 @@ was not isolated. When a newly added data file fails to install during an
 incremental build, rebuild that package from a fresh build directory before
 changing source paths. The first restart attempt used `sudo -n`, which required
 a password; use the documented authenticated sudo path on this host.
+
+## 2026-09-26 — Diagnostic emergency state blocked the operator's Start (GPT-6 Astra)
+
+After testing mission refresh, the diagnostic restored AS_EMERGENCY. Although
+the handoff named that state, it did not explain that Start is rejected until
+the emergency is cleared. Rubén reported the Start button would not stay green.
+The journal confirmed `Ignored cmd 'start' in state AS_EMERGENCY`. Sending Stop
+restored AS_READY with throttle `[0]`. When leaving a controlled test stopped,
+use READY where appropriate, or explicitly give the recovery action if a real
+fault requires retaining EMERGENCY. Do not label the next Start rejection as a
+new malfunction before checking the state the diagnostic itself left behind.

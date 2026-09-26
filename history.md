@@ -2157,3 +2157,13 @@ restored via dashboard ROS command topics. A three-second capture measured
 30 AS_EMERGENCY states, and three advancing ESP32 heartbeats. This verifies
 publication and a live return link, not the physical throttle selector voltage.
 The operator's physical-output check remains pending. The VM SSH retry timed out.
+
+## 2026-09-26 — Start rejected by the diagnostic emergency state
+
+Live `/kart/state` was AS_EMERGENCY and the journal showed rejected Start
+commands. This was the state deliberately left by the mission-refresh probe,
+not evidence that its code failed. The dashboard server optimistically sets
+`state=running` before the state-machine response, explaining a transient green
+Start indication. A Stop command restored AS_READY; live throttle remained `[0]`.
+No Start command was issued in this recovery, and physical pedal isolation is
+still awaiting an operator measurement.
