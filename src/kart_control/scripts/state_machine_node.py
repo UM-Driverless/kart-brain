@@ -140,6 +140,9 @@ class StateMachineNode(Node):
         msg.data = STATE_NAMES[self._logic.state]
         self._state_pub.publish(msg)
         self._publish_state_frame()
+        # The ESP32 boots in Manual. Repeat the selected mission so reconnects
+        # and lost selection frames cannot leave its throttle mux on the pedal.
+        self._publish_mission_frame()
 
         # Hold the steering actuator unpowered while armed but not driving:
         # direct-PWM mode makes the mux's zero Twist mean "no drive" instead of

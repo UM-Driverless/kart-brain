@@ -2132,3 +2132,20 @@ A separate verified code gap is that mission frames are sent only on mission
 changes; a reconnect or ESP32 restart can leave its zero-initialized Manual
 mission unchanged. This is a candidate explanation for the reported behavior,
 not a measured firmware mission value. It is recorded as a follow-up in tasks.md.
+
+## 2026-09-26 — Repeat mission selection after ESP32 reconnect
+
+After Rubén reconnected the ESP32, a six-second probe observed heartbeat uptime
+116183–121183 ms, live pedal frames around `[434,390,44,39]`, health flags 12,
+and zero commanded throttle throughout AS_EMERGENCY. No `/orin/mision` frame
+arrived. The log's latest selection was Manual to Autonomous before this
+reboot. The ESP32's actual mission is not echoed, so its value remains inferred.
+A single mission frame (type 35, payload 8) was resent without changing state or
+throttle; the operator was asked whether the motor-controller voltage stopped
+following the pedal. That physical result is still pending.
+
+A production-method regression reproduced the missing mission refresh. The
+state heartbeat now republishes the current mission alongside state at 10 Hz.
+The new regression plus state-logic and blind-throttle tests pass: 175 tests.
+This repairs reconnect recovery without modifying firmware or pedal fallback
+behavior during genuine communication loss.
