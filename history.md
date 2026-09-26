@@ -2149,3 +2149,11 @@ state heartbeat now republishes the current mission alongside state at 10 Hz.
 The new regression plus state-logic and blind-throttle tests pass: 175 tests.
 This repairs reconnect recovery without modifying firmware or pedal fallback
 behavior during genuine communication loss.
+
+Mission-refresh deployment: `1ba58ca` was pushed, pulled on `orin-remote`, and
+`kart-brain` restarted. AUTO, Zero speed, None steering and AS_EMERGENCY were
+restored via dashboard ROS command topics. A three-second capture measured
+30 `/orin/mision` frames, all `[8]`, 300 `/orin/throttle` frames, all `[0]`,
+30 AS_EMERGENCY states, and three advancing ESP32 heartbeats. This verifies
+publication and a live return link, not the physical throttle selector voltage.
+The operator's physical-output check remains pending. The VM SSH retry timed out.

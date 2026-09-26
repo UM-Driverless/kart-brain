@@ -14,7 +14,7 @@ the archive whole, only once its last step closes.
 
 ## Ready
 
-- [ ] **Refresh the selected mission after ESP32 reconnect or reboot.** `state_machine_node.py` publishes `/orin/mision` only when mission changes; repeated selections return before publishing. Firmware initializes `MISION_ORIN` to zero (Manual), so a lost mission frame or reboot can leave physical pedal control selected despite AUTO on the dashboard. Add periodic mission publication and verify recovery with zero throttle before any driving test.
+- [⏸ physical voltage check; VM offline] **Validate mission recovery at the throttle output after ESP32 reconnect.** Fix `1ba58ca` repeats the selected mission at 10 Hz and is deployed on the Orin. Live capture: 30 AUTO frames, 300 zero-throttle frames, three ESP32 heartbeats in three seconds with AS_EMERGENCY unchanged. Confirm the motor-controller input no longer follows the pedal in AUTO + Zero, including after reconnect. VM deployment remains blocked by SSH timeout.
 
 - [ ] **Expire stale controller commands before forwarding throttle.** Code review on 2026-09-26 reproduced 1000 calls to the production `_mux_tick` with no new autonomous command, all forwarding the cached 2.625 while driving. `state_machine_node.py` stores commands without timestamps, and `cmd_vel_bridge_node.py` also repeats its cached effort. Add command-age checks and regression tests at both boundaries; verify a stopped publisher produces zero throttle without relying on the serial-link watchdog.
 
