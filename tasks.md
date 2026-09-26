@@ -14,11 +14,13 @@ the archive whole, only once its last step closes.
 
 ## Ready
 
-- [ ] **Explain rejected Start commands in the dashboard.** The server optimistically sets running before the state machine accepts Start; in AS_EMERGENCY the button flashes green then reverts without explaining why. Show the confirmed state and an actionable rejection reason, preserving the requirement to clear emergency before starting. Observed 2026-09-26.
+- [ ] **Validate perception source timestamps before treating republished frames as fresh.** Sensor safety checks arrival age and finite coordinates, but does not yet reject an old camera frame republished with fresh arrival times. Establish timestamp semantics across live ZED, recorded video and simulation, then test frozen/repeated source frames.
+
+- [⏸ motor isolation confirmation; VM offline] **Activate and physically validate sensor safety.** Implementation passed 458 local tests, six isolated ROS tests on the Orin and 74 firmware native tests. Firmware dev `a7386fb` is built but not flashed. Confirm the steering motor is disconnected or its controller unpowered before flashing; then activate both sides together and verify invalid/unplugged sensors latch emergency, actual brake response and explicit reset without restart. Firmware watchdog hardware work is tracked only in kart-medulla. VM deployment remains blocked by SSH timeout. Implementation reference: `.agents/sensor-safety.md`.
+
 
 - [⏸ physical voltage check; VM offline] **Validate mission recovery at the throttle output after ESP32 reconnect.** Fix `1ba58ca` repeats the selected mission at 10 Hz and is deployed on the Orin. Live capture: 30 AUTO frames, 300 zero-throttle frames, three ESP32 heartbeats in three seconds with AS_EMERGENCY unchanged. Confirm the motor-controller input no longer follows the pedal in AUTO + Zero, including after reconnect. VM deployment remains blocked by SSH timeout.
 
-- [ ] **Expire stale controller commands before forwarding throttle.** Code review on 2026-09-26 reproduced 1000 calls to the production `_mux_tick` with no new autonomous command, all forwarding the cached 2.625 while driving. `state_machine_node.py` stores commands without timestamps, and `cmd_vel_bridge_node.py` also repeats its cached effort. Add command-age checks and regression tests at both boundaries; verify a stopped publisher produces zero throttle without relying on the serial-link watchdog.
 
 - [ ] **Allow blind throttle when perception is disabled at launch.** `kart_bringup/launch/launch.py` places `cone_follower` behind `IfCondition(perception)`, so `perception:=false` removes the producer of blind throttle despite the mode supporting absent detections. Separate controller availability from camera/perception startup and test the no-perception launch.
 

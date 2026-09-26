@@ -15,6 +15,7 @@ install(PROGRAMS
 # the scripts' directory-relative imports resolve at runtime.
 install(FILES
   scripts/state_logic.py
+  scripts/safety_supervisor.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -362,6 +362,11 @@ class ConeFollowerNode(Node):
         self.create_subscription(Frame, "/orin/steer_mode", self._on_steer_mode, 10)
         self.create_timer(1.0, self._refresh_steer_mode)
         self.last_detection_time = self.get_clock().now()
+        self._detection_invalid = False
+        self._received_detections = False
+        self._desired_mode_pub = self.create_publisher(Frame, "/kart/controller_steer_mode", 10)
+        self._sensor_safety_pub = self.create_publisher(String, "/kart/controller_safety", 10)
+        self.create_timer(0.1, self._publish_sensor_safety)
         self.timer = self.create_timer(0.1, self._safety_check)
         self.create_subscription(
             String, "/dashboard/controller_type", self._on_controller_type, 10
@@ -538,7 +543,7 @@ class ConeFollowerNode(Node):
         if self._speed_time is None:
             return False
         age = (self.get_clock().now() - self._speed_time).nanoseconds / 1e9
-        return age <= self.speed_stale_timeout
+        return 0 <= age <= self.speed_stale_timeout and math.isfinite(self._actual_speed)
 
     def _constant_speed_throttle(self) -> float:
         """@brief PI control of throttle to hold target_speed, in the fake-m/s units.
@@ -694,6 +699,8 @@ class ConeFollowerNode(Node):
         @param msg Detection3DArray in camera optical frame (Z=forward, X=right, Y=down).
         """
         self.last_detection_time = self.get_clock().now()
+        self._received_detections = True
+        self._detection_invalid = False
         self._last_target = None  # cleared each frame; set by the active controller
 
         cones = []
@@ -702,6 +709,10 @@ class ConeFollowerNode(Node):
                 continue
             class_id = det.results[0].hypothesis.class_id
             pos = det.results[0].pose.pose.position
+            if not (math.isfinite(pos.x) and math.isfinite(pos.z)):
+                self._detection_invalid = True
+                self.cmd_pub.publish(Twist())
+                return
             fwd = pos.z
             left = -pos.x
             if fwd < 0.5:
@@ -1134,6 +1145,27 @@ class ConeFollowerNode(Node):
         return steer, speed, out
 
     # ── safety timeout ────────────────────────────────────────────────
+
+    def _publish_sensor_safety(self):
+        """Report required-input health independently of the commanded effort."""
+        reason = ""
+        requires_perception = (self.controller_type != "none" or
+                               self.speed_controller_type not in ("zero", "constant_throttle_blind"))
+        age = (self.get_clock().now() - self.last_detection_time).nanoseconds / 1e9
+        if requires_perception and (not self._received_detections or
+                                    not 0 <= age <= self.no_cone_timeout):
+            reason = "Perception missing or stale"
+        elif requires_perception and self._detection_invalid:
+            reason = "Perception contains invalid coordinates"
+        elif self.speed_controller_type == "constant_speed" and not self._speed_is_fresh():
+            reason = "Speed measurement missing, invalid or stale"
+        msg = String()
+        msg.data = reason
+        self._sensor_safety_pub.publish(msg)
+        mode = Frame()
+        mode.type = Frame.ORIN_STEER_MODE
+        mode.payload = [1 if self.controller_type == "none" else 0]
+        self._desired_mode_pub.publish(mode)
 
     def _safety_check(self):
         """@brief Timer callback: decide what to command when no detections are arriving.

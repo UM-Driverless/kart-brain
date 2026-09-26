@@ -499,11 +499,6 @@ function rcPop(id) {
 
 function updateMissionUI() {
   const isAuto = AUTONOMOUS_MISSIONS.has(currentMission);
-  // .ctrl-row is the only one of these left. The old .act-grid / .ctrl-grouplbl / .t-ctrl-row /
-  // .h-ctrl-row belonged to the skins that were dropped in 2d6f169 and matched nothing.
-  document.querySelectorAll('.ctrl-row').forEach(
-    el => el.style.display = isAuto ? '' : 'none'
-  );
   document.querySelectorAll('.algo-select').forEach(el => {
     if (el.classList.contains('svo-select')) {
       el.style.display = currentMission === 'inspection' ? 'block' : 'none';
@@ -521,13 +516,12 @@ function updateMissionUI() {
   // Angle/PWM toggle: only remote_control sends manual_control, so it is the only mission
   // where the steering mode is worth setting.
   $('manualWidget')?.classList.toggle('on', currentMission === 'remote_control');
-  // Controls pane holds only .ctrl-row, which the loop above hides outside autonomous
-  // missions — so in manual/remote it was a full grid column framing nothing. Hide the pane
-  // itself on the same condition and the grid gives that width to the joystick instead.
-  // State/mission/heartbeat used to live here too; they are in the topbar now, visible on
-  // every page rather than only this one.
-  const ctrlPane = $('rcCtrlPane');
-  if (ctrlPane) ctrlPane.style.display = isAuto ? '' : 'none';
+  // Safety status and reset remain available in every mission.
+  document.querySelectorAll('[data-st="running"]').forEach(button => {
+    button.disabled = !isAuto;
+    button.textContent = isAuto ? 'Start' : 'Start (auto only)';
+    button.title = isAuto ? '' : 'Start applies to autonomous missions';
+  });
   updateAlgoButtons();
 }
 
@@ -900,7 +894,10 @@ function wsSend(obj) {
     // No server in demo mode — apply mission/state changes locally so the UI
     // can be explored (mission grid, Start/Stop, joystick widget, algo dropdowns).
     if (obj.action === 'set_mission') demoMission = obj.mission;
-    else if (obj.action === 'set_state') demoState = obj.state;
+    else if (obj.action === 'set_state') {
+      if (obj.state === 'reset') demoState = 'idle';
+      else if (obj.state !== 'running' || demoState !== 'ebs') demoState = obj.state;
+    }
     else if (obj.action === 'set_compressor') {
       demoCompDisabled = obj.disabled;
       if (obj.disabled) demoState = 'ebs';   // mirrors what the server does
@@ -960,6 +957,12 @@ function steerScreen(rad) { return -(rad || 0); }
 
 
 function updatePills(d) {
+  const safety = $('safetyReason');
+  if (safety) {
+    const reason = typeof d.safety_reason === 'string' ? d.safety_reason : 'Waiting for safety status';
+    safety.textContent = reason || 'Safety inputs healthy';
+    safety.classList.toggle('healthy', reason === '');
+  }
   const ps = $('pillState');
   ps.textContent = d.state.toUpperCase();
   ps.className = 'spill'+(d.state==='running'?' act':'');
@@ -2251,12 +2254,17 @@ body{
 /* Clickable controls: chamfered, raised (gradient + top highlight), hover-brighten,
    press-down — reads as a physical button, distinct from the status pills above. */
 .ctrl-row{ display:flex; gap:var(--sp-2); }
+#rcCtrlPane .ctrl-row{ flex-wrap:wrap; }
+#rcCtrlPane .ctrl-btn{ flex:1 1 40%; }
+.safety-reason{ color:#ffb454; font-size:var(--fs-sm); line-height:1.35; overflow-wrap:anywhere; }
+.safety-reason.healthy{ color:var(--rc-green); }
 .ctrl-btn{ flex:1; padding:var(--sp-4) var(--sp-2); border:1px solid var(--rc-line-hard); font-size:var(--fs-sm); font-weight:700;
   letter-spacing:.12em; cursor:pointer; text-transform:uppercase; font-family:'Rajdhani',sans-serif; color:var(--rc-white);
   background:linear-gradient(180deg,#2a2a30,#151519);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.08), 0 2px 3px rgba(0,0,0,.45);
   transition:filter .12s ease, transform .06s ease; -webkit-user-select:none; user-select:none;
   clip-path:polygon(0 0, calc(100% - var(--cut-sm)) 0, 100% var(--cut-sm), 100% 100%, var(--cut-sm) 100%, 0 calc(100% - var(--cut-sm))); }
+.ctrl-btn:disabled{ opacity:.45; cursor:not-allowed; }
 .ctrl-btn:hover{ filter:brightness(1.3); }
 .ctrl-btn:active{ transform:translateY(1px); box-shadow:inset 0 2px 5px rgba(0,0,0,.55); }
 .ctrl-btn.go{ color:var(--rc-green); }
@@ -2703,8 +2711,9 @@ body{
           <div class="algo-select" id="targetSpeedRow" style="display:none"><div class="algo-label">Target speed (km/h)</div><input class="algo-dropdown" id="targetSpeedInput" type="number" step="0.5" min="0" value="1" onchange="onTargetSpeedChange(this)"></div>
         </div>
         <div class="rc-panel rc-mpanel" id="rcCtrlPane">
-          <span class="rc-label">Controls</span>
-          <div class="ctrl-row"><button class="ctrl-btn go" data-st="running" onclick="wsSend({action:'set_state',state:'running'})">Start</button><button class="ctrl-btn stop" data-st="idle" onclick="wsSend({action:'set_state',state:'idle'})">Stop</button><button class="ctrl-btn restart" onclick="rcConfirm('Restart kart-brain', 'The ROS stack restarts and telemetry stops for a few seconds. The Orin itself stays up.', { okText: 'Restart' }).then(ok =&gt; { if (ok) wsSend({ action: 'restart' }); })">Restart</button></div>
+          <span class="rc-label">Controls / safety</span>
+          <div id="safetyReason" class="safety-reason" role="status" aria-live="polite">Waiting for safety status</div>
+          <div class="ctrl-row"><button class="ctrl-btn go" data-st="running" onclick="wsSend({action:'set_state',state:'running'})">Start</button><button class="ctrl-btn stop" data-st="idle" onclick="wsSend({action:'set_state',state:AUTONOMOUS_MISSIONS.has(currentMission)?'idle':'ebs'})">Stop</button><button class="ctrl-btn" onclick="wsSend({action:'set_state',state:'reset'})">Reset safety</button><button class="ctrl-btn restart" onclick="rcConfirm('Restart kart-brain', 'The ROS stack restarts and telemetry stops for a few seconds. The Orin itself stays up.', { okText: 'Restart' }).then(ok =&gt; { if (ok) wsSend({ action: 'restart' }); })">Restart</button></div>
         </div>
         <div class="rc-panel rc-mpanel rc-joypane" id="rcJoyPane" style="display:none">
           <span class="rc-label">Remote control</span>
@@ -3533,7 +3542,7 @@ if (new URLSearchParams(location.search).has('demo')) {
       cones_3d_ground: cones,
       pid_override: demoPid.override, pid_kp: demoPid.kp, pid_ki: demoPid.ki,
       pid_kd: demoPid.kd, pid_pwm_limit: demoPid.limit,
-      mission: demoMission, state: demoState,
+      mission: demoMission, state: demoState, safety_reason: demoState === 'ebs' ? 'Emergency stop latched — reset safety before starting' : '',
       as_state: demoState === 'running' ? 'AS_DRIVING' : (demoState === 'ebs' ? 'AS_EMERGENCY_BRAKE' : 'AS_READY'),
     };
     // mirror the WebSocket handler: on a mission change, re-run the show/hide UI

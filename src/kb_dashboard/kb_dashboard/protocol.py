@@ -346,7 +346,7 @@ def _bar_from_mv(mv):
     sensor's span, because a pegged channel is indistinguishable from a fault and
     must not render as a confident pressure.
     """
-    if mv is None or mv >= ADC_CEILING_MV:
+    if mv is None or mv < 0 or mv >= ADC_CEILING_MV:
         return None
     bar = BAR_PER_PIN_VOLT * mv / 1000.0
     return round(bar, 2) if bar <= SENSOR_MAX_BAR else None
@@ -354,7 +354,7 @@ def _bar_from_mv(mv):
 
 def _bar_from_raw_approx(adc):
     """@brief Fallback for firmware too old to send mV. Approximate — see above."""
-    if adc is None or adc >= ADC_FULL_SCALE:
+    if adc is None or adc < 0 or adc >= ADC_FULL_SCALE:
         return None
     return round(BAR_PER_PIN_VOLT * (adc / ADC_FULL_SCALE * ADC_VREF_V_ASSUMED), 2)
 
@@ -409,6 +409,7 @@ def decode_pneumatic(payload) -> dict:
     sdc_raw = payload[7] if len(payload) >= 8 else None
     # Fields 8/9 are the calibrated pin voltages. Prefer them whenever present:
     # they need no assumption about the ADC's full scale, only the divider ratio.
+    # Negative calibrated values mean invalid: never fall back to a stale raw count.
     pres1_mv = payload[8] if len(payload) >= 9 else None
     pres2_mv = payload[9] if len(payload) >= 10 else None
     tank_bar = _bar_from_mv(pres1_mv) if pres1_mv is not None else _bar_from_raw_approx(pressure_adc)
@@ -416,7 +417,7 @@ def decode_pneumatic(payload) -> dict:
     return {
         "pneu_tank_bar": tank_bar,
         "pneu_piston_bar": piston_bar,
-        "pneu_tank_mv": pres1_mv,
+        "pneu_tank_mv": pres1_mv if tank_bar is not None else None,
         "pneu_calibrated": pres1_mv is not None,
         "esp32_compressor_on": comp_duty > 0,
         "esp32_compressor_duty": comp_duty,
@@ -687,6 +688,7 @@ class DashboardState:
             "cones_3d_ground": [],  # [{"x": float, "z": float, "c": str}, ...] from /perception/cones_3d_ground
             "mission": "manual",
             "state": "idle",  # idle | running | ebs
+            "safety_reason": "Waiting for safety status",
             "steer_mode": "pid",  # "pid" or "pwm"
             # Steering PID gains as last reported by the ESP32 over ESP_STEER_PID.
             # None means the firmware has not reported yet — either it predates the
@@ -703,6 +705,7 @@ class DashboardState:
             "target_speed": 0.28,  # m/s setpoint for constant_speed (1 km/h)
         }
         self._heartbeat_time = 0.0
+        self._safety_time = None
         self._hall = None
 
     def configure_hall_speed(self, edges_per_metre=0.0, enabled=True):
@@ -725,6 +728,8 @@ class DashboardState:
         """
         with self.lock:
             self.data[key] = value
+            if key == "safety_reason":
+                self._safety_time = time.monotonic()
 
     def heartbeat(self):
         """@brief Record a heartbeat reception, updating the timestamp."""
@@ -739,6 +744,8 @@ class DashboardState:
         """
         with self.lock:
             d = dict(self.data)
+            if self._safety_time is not None and time.monotonic() - self._safety_time > 2.0:
+                d["safety_reason"] = "Safety status stale — waiting for the state machine"
             if self._hall is not None:
                 d.update(self._hall.snapshot(time.monotonic()))
                 d["esp32_speed"] = d["hall_speed_mps"]

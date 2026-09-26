@@ -43,6 +43,10 @@ KB_coms_micro::KB_coms_micro() : Node("kb_coms_micro_node") {
 
     esp_fps_pub_ = create_publisher<std_msgs::msg::Float32>("/esp32/fps", 10);
 
+    esp_safety_pub_ = create_publisher<kb_interfaces::msg::Frame>("/esp32/safety", 10);
+    orin_safety_reset_sub_ = create_subscription<kb_interfaces::msg::Frame>(
+        "/orin/safety_reset", 10, std::bind(&KB_coms_micro::kb_coms_TXcallback, this, std::placeholders::_1));
+
     // Create Subscriptors
     orin_throttle_sub_ = create_subscription<kb_interfaces::msg::Frame>(
         "/orin/throttle", 10, std::bind(&KB_coms_micro::kb_coms_TXcallback, this, std::placeholders::_1));
@@ -285,6 +289,14 @@ void KB_coms_micro::kb_coms_RXcallback(const SerialDriver::Frame &frame_esp) {
         pedals_msg.payload = frame_esp.payload;
         esp_pedals_pub_->publish(pedals_msg);
 
+        break;
+    }
+
+    case kb_interfaces::msg::Frame::ESP_SAFETY_STATUS: {
+        kb_interfaces::msg::Frame status;
+        status.type = frame_esp.type;
+        status.payload = frame_esp.payload;
+        esp_safety_pub_->publish(status);
         break;
     }
 

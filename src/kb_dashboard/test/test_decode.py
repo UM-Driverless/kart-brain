@@ -170,6 +170,18 @@ class TestDecodePneumatic:
         assert decode_pneumatic(self._frame(mv1=3100))["pneu_tank_bar"] is None
         assert decode_pneumatic(self._frame(mv1=2899))["pneu_tank_bar"] is not None
 
+    def test_invalid_calibrated_channels_do_not_fall_back_to_raw(self):
+        frame = [2500, 0, 2500, 0, 100, 0, 0, 0, -1, -1]
+        fields = decode_pneumatic(frame)
+        assert fields["pneu_tank_bar"] is None
+        assert fields["pneu_piston_bar"] is None
+        assert fields["pneu_tank_mv"] is None
+
+    def test_negative_raw_channels_are_not_pressure(self):
+        fields = decode_pneumatic([-1, 0, -1])
+        assert fields["pneu_tank_bar"] is None
+        assert fields["pneu_piston_bar"] is None
+
     def test_compressor_on(self):
         fields = decode_pneumatic(self._frame(mv1=1000, duty=153))
         assert fields["esp32_compressor_on"] is True

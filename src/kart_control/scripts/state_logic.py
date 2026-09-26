@@ -65,8 +65,9 @@ class StateLogic:
         mission message for 1 s to ensure delivery, and a repeat must never
         trigger a transition (especially not the mid-drive emergency below).
         """
+        if self.state == AS_EMERGENCY:
+            return None
         old = self.mission
-        self.mission = mission
         if old == mission:
             return None
 
@@ -75,6 +76,7 @@ class StateLogic:
         if self.state == AS_DRIVING:
             return self._set_state(AS_EMERGENCY)
 
+        self.mission = mission
         if mission not in AUTONOMOUS_MISSIONS and self.state != AS_OFF:
             return self._set_state(AS_OFF)
         if mission in AUTONOMOUS_MISSIONS and self.state in (AS_OFF, AS_FINISHED):
@@ -93,7 +95,7 @@ class StateLogic:
         s = self.state
         if cmd == "start" and s == AS_READY:
             return self._set_state(AS_DRIVING), self.mission in AUTONOMOUS_MISSIONS
-        if cmd == "stop" and s in (AS_READY, AS_DRIVING, AS_FINISHED, AS_EMERGENCY):
+        if cmd == "stop" and s in (AS_READY, AS_DRIVING, AS_FINISHED):
             # Stay armed (AS_READY) if an autonomous mission is selected,
             # matching real FS behavior: stop driving ≠ deselect mission.
             if self.mission in AUTONOMOUS_MISSIONS:

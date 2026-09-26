@@ -10,12 +10,13 @@ def test_state_heartbeat_repeats_current_mission_without_a_selection_change():
                if isinstance(n, ast.ClassDef) and n.name == 'StateMachineNode')
     method = next(n for n in cls.body if isinstance(n, ast.FunctionDef)
                   and n.name == '_publish_state')
-    namespace = {'String': SimpleNamespace, 'STATE_NAMES': {4: 'AS_EMERGENCY'}}
+    namespace = {'String': SimpleNamespace, 'STATE_NAMES': {4: 'AS_EMERGENCY'}, 'time': SimpleNamespace(monotonic=lambda: 0)}
     exec(compile(ast.Module(body=[method], type_ignores=[]), str(path), 'exec'), namespace)
     missions, states = [], []
     node = SimpleNamespace(
-        _logic=SimpleNamespace(state=4, mission='autonomous', heartbeat_steer_mode=lambda: None),
+        _logic=SimpleNamespace(state=4, mission='autonomous', heartbeat_steer_mode=lambda: None, reason=lambda now: '', pending_reset=None),
         _state_pub=SimpleNamespace(publish=states.append),
+        _safety_reason_pub=SimpleNamespace(publish=lambda msg: None),
         _publish_state_frame=lambda: None,
         _publish_mission_frame=lambda: missions.append(node._logic.mission),
     )

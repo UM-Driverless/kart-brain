@@ -752,3 +752,22 @@ restored AS_READY with throttle `[0]`. When leaving a controlled test stopped,
 use READY where appropriate, or explicitly give the recovery action if a real
 fault requires retaining EMERGENCY. Do not label the next Start rejection as a
 new malfunction before checking the state the diagnostic itself left behind.
+
+
+## 2026-09-26 — Stopped too early on command-runner handle exhaustion (GPT-6 Astra)
+
+The command runner returned `Too many open files` before it could launch a shell.
+The response initially asked the user to restart the application without identifying
+and closing unused owned tool connections. A worker's ordinary Node tool later
+measured a 256-handle soft limit and 168 pipes in the runner. Closing unused plugin
+children freed descriptors and restored execution. When this recurs, inspect owned
+connections through an available ordinary tool and close verified unused helpers;
+do not terminate unrelated user sessions or assume SSH caused a local spawn error.
+
+Verification setup also needed correction: the system Python lacks pytest, so use
+`uv run --no-project --with pytest`; dashboard tests need `PYTHONPATH=src/kb_dashboard`.
+The first ROS test harness used a fixed one-second discovery delay and missed
+publishers on repeated process starts; wait for subscriptions and observed state.
+Mac tar extended attributes created AppleDouble metadata in the isolated Orin test
+workspace. Remove those generated files there and use COPYFILE_DISABLE=1 for future
+source archives. These setup failures are distinct from product test results.

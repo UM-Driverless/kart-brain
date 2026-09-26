@@ -8,9 +8,14 @@ that kb_coms_micro subscribes to and relays over UART to the ESP32.
 Payload encoding: int32 binary (steering x1000, throttle/brake x255).
 """
 
+import math
+import time
+
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
+from std_msgs.msg import String
+from safety_supervisor import COMMAND_TIMEOUT
 from kb_interfaces.msg import Frame
 from kb_dashboard.protocol import encode_steering, encode_throttle, encode_braking, ORIN_STEER_MODE
 
@@ -45,6 +50,10 @@ class CmdVelBridgeNode(Node):
         self.sub = self.create_subscription(Twist, in_topic, self._on_cmd, 10)
         self.create_subscription(Frame, "/orin/steer_mode", self._on_steer_mode, 10)
 
+        self._last_cmd_time = None
+        self._seen_command = False
+        self._emergency_pub = self.create_publisher(String, "/dashboard/state_cmd", 10)
+        self._mode_pub = self.create_publisher(Frame, "/orin/steer_mode", 10)
         self._throttle_effort = 0.0
         self._brake_effort = 0.0
         self._steer_rad = 0.0
@@ -66,6 +75,13 @@ class CmdVelBridgeNode(Node):
         speed = msg.linear.x
         steer = msg.angular.z
 
+        self._seen_command = True
+        if not (math.isfinite(speed) and math.isfinite(steer)):
+            self._last_cmd_time = None
+            self._throttle_effort = self._brake_effort = self._steer_rad = 0.0
+            return
+        self._last_cmd_time = time.monotonic()
+
         # Throttle / brake from speed
         if speed >= 0:
             self._throttle_effort = min(1.0, speed / self.max_speed)
@@ -83,6 +99,18 @@ class CmdVelBridgeNode(Node):
 
     def _send_frames(self):
         """@brief Timer callback: publish current throttle, brake, and steering as Frame messages."""
+        now = time.monotonic()
+        if self._last_cmd_time is None or not 0 <= now - self._last_cmd_time <= COMMAND_TIMEOUT:
+            self._throttle_effort = self._brake_effort = self._steer_rad = 0.0
+            mode = Frame()
+            mode.type = ORIN_STEER_MODE
+            mode.payload = [1]  # zero must unpower steering, not steer to centre
+            self._mode_pub.publish(mode)
+            if self._seen_command:
+                emergency = String()
+                emergency.data = "ebs"
+                self._emergency_pub.publish(emergency)
+
         throttle_frame = Frame()
         throttle_frame.type = Frame.ORIN_TARG_THROTTLE
         throttle_frame.payload = encode_throttle(self._throttle_effort)

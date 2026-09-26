@@ -190,6 +190,10 @@ class DashboardNode(Node):
 
         # State machine feedback
         self.create_subscription(
+            String, "/kart/safety_reason",
+            lambda msg: self.state.update("safety_reason", msg.data), qos_reliable
+        )
+        self.create_subscription(
             String, "/kart/state", self._on_kart_state, qos_reliable
         )
 

@@ -411,9 +411,9 @@ async def run_websocket_server(
                     controller["id"] = None
         elif action == "set_state":
             new_state = cmd.get("state", "idle")
-            if new_state in ("idle", "running", "ebs"):
-                state.update("state", new_state)
-                cmd_map = {"idle": "stop", "running": "start", "ebs": "ebs"}
+            if new_state in ("idle", "running", "ebs", "reset"):
+                # Only /kart/state confirms a transition; Start can be rejected.
+                cmd_map = {"idle": "stop", "running": "start", "ebs": "ebs", "reset": "reset"}
                 if hasattr(node, "publish_state_cmd"):
                     node.publish_state_cmd(cmd_map[new_state])
         elif action == "take_control":

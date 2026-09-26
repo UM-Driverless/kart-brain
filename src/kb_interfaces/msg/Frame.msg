@@ -15,6 +15,7 @@ uint8 ESP_HEALTH_STATUS     = 0x0B
 uint8 ESP_PNEUMATIC         = 0x0C
 uint8 ESP_STEER_PID         = 0x0D
 uint8 ESP_PEDALS            = 0x0E
+uint8 ESP_SAFETY_STATUS     = 0x0F
 
 
 # ==========================
@@ -32,6 +33,7 @@ uint8 ORIN_CALIBRATE_STEERING = 0x28
 uint8 ORIN_STEER_MODE       = 0x29
 uint8 ORIN_COMPRESSOR_DISABLE = 0x2A
 uint8 ORIN_STEER_PID        = 0x2B
+uint8 ORIN_SAFETY_RESET     = 0x2C
 
 # ==========================
 # Others (0x40 - 0xFF)

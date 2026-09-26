@@ -38,6 +38,18 @@ class Harness:
         self.mission_pub = node.create_publisher(String, "/dashboard/mission", 10)
         self.cmd_pub = node.create_publisher(String, "/dashboard/state_cmd", 10)
         self.auto_pub = node.create_publisher(Twist, "/kart/cmd_vel", 10)
+        self.mission_id = 8
+        self.controller_mode = 0
+        self.safety_enabled = True
+        self.safety_faults = 0
+        self.safety_latch = 0
+        self.reset_ack = 0
+        self.auto_cmd = None
+        self.safety_pub = node.create_publisher(Frame, "/esp32/safety", 10)
+        self.mode_pub = node.create_publisher(Frame, "/kart/controller_steer_mode", 10)
+        self.controller_pub = node.create_publisher(String, "/kart/controller_safety", 10)
+        node.create_subscription(Frame, "/orin/safety_reset", self.reset, 10)
+        node.create_timer(0.05, self.feed_inputs)
         self.muxed = []
         self.steer_modes = []
         self.states = []
@@ -45,10 +57,38 @@ class Harness:
         node.create_subscription(Frame, "/orin/steer_mode", self.steer_modes.append, 10)
         node.create_subscription(String, "/kart/state", self.states.append, 10)
 
+    def reset(self, msg):
+        if not self.safety_faults:
+            self.reset_ack = msg.payload[0]
+            self.safety_latch = 0
+
+    def feed_inputs(self):
+        if self.safety_enabled:
+            frame = Frame()
+            frame.type = Frame.ESP_SAFETY_STATUS
+            flags = 2 if self.safety_latch else (0 if self.safety_faults else 1)
+            frame.payload = [1, self.safety_faults, self.safety_latch, flags, self.reset_ack, self.mission_id]
+            self.safety_pub.publish(frame)
+            self.controller_pub.publish(String(data=""))
+            mode = Frame()
+            mode.type = Frame.ORIN_STEER_MODE
+            mode.payload = [self.controller_mode]
+            self.mode_pub.publish(mode)
+        if self.auto_cmd is not None:
+            self.auto_pub.publish(self.auto_cmd)
+
     def spin(self, seconds):
         end = time.monotonic() + seconds
         while time.monotonic() < end:
             rclpy.spin_once(self.node, timeout_sec=0.05)
+
+    def wait_until(self, predicate, timeout=8.0):
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            self.spin(0.05)
+            if predicate():
+                return
+        assert predicate(), "ROS discovery or expected state timed out"
 
     def send(self, pub, msg_type, data):
         msg = msg_type()
@@ -62,7 +102,8 @@ def harness():
     proc = subprocess.Popen([sys.executable, str(NODE_SCRIPT)])
     node = rclpy.create_node("state_machine_test_harness")
     h = Harness(node)
-    h.spin(1.0)  # let discovery settle
+    h.wait_until(lambda: bool(h.states) and h.mission_pub.get_subscription_count() > 0
+                 and h.cmd_pub.get_subscription_count() > 0)
     yield h
     proc.terminate()
     proc.wait(timeout=5)
@@ -75,7 +116,7 @@ def test_mission_select_without_start_keeps_steering_unpowered(harness):
     auto = Twist()
     auto.linear.x = 3.0
     auto.angular.z = 0.5
-    harness.auto_pub.publish(auto)
+    harness.auto_cmd = auto
 
     harness.send(harness.mission_pub, String, "autonomous")
     harness.muxed.clear()
@@ -95,12 +136,13 @@ def test_start_passes_commands_and_mission_change_stops_them(harness):
     auto = Twist()
     auto.linear.x = 3.0
     auto.angular.z = 0.5
+    harness.auto_cmd = auto
 
     harness.send(harness.mission_pub, String, "autonomous")
-    harness.spin(0.3)
+    harness.wait_until(lambda: harness.states[-1].data == "AS_READY")
     harness.send(harness.cmd_pub, String, "start")
     harness.spin(0.3)
-    harness.auto_pub.publish(auto)
+    harness.auto_cmd = auto
     harness.muxed.clear()
     harness.spin(0.5)
     assert any(t.linear.x == 3.0 for t in harness.muxed), "driving does not pass cmd_vel"
@@ -113,3 +155,66 @@ def test_start_passes_commands_and_mission_change_stops_them(harness):
     for twist in harness.muxed:
         assert twist.linear.x == 0.0 and twist.angular.z == 0.0
     assert "AS_EMERGENCY" in [s.data for s in harness.states]
+
+
+def test_sensor_trip_requires_acknowledged_reset(harness):
+    auto = Twist()
+    auto.linear.x = 2.0
+    harness.auto_cmd = auto
+    harness.send(harness.mission_pub, String, "autonomous")
+    harness.wait_until(lambda: harness.states[-1].data == "AS_READY")
+    harness.send(harness.cmd_pub, String, "start")
+    harness.spin(.3)
+    harness.safety_faults = harness.safety_latch = 1
+    harness.spin(.3)
+    harness.muxed.clear()
+    harness.spin(.2)
+    assert harness.states[-1].data == "AS_EMERGENCY"
+    assert all(m.linear.x == 0 and m.angular.z == 0 for m in harness.muxed)
+    harness.safety_faults = 0
+    harness.send(harness.cmd_pub, String, "stop")
+    harness.spin(.2)
+    assert harness.states[-1].data == "AS_EMERGENCY"
+    harness.send(harness.cmd_pub, String, "reset")
+    harness.spin(.6)
+    assert harness.reset_ack > 0
+    assert harness.states[-1].data == "AS_OFF"
+
+
+def test_missing_firmware_blocks_start(harness):
+    harness.safety_enabled = False
+    harness.spin(.6)
+    harness.send(harness.mission_pub, String, "autonomous")
+    harness.spin(.2)
+    harness.send(harness.cmd_pub, String, "start")
+    harness.spin(.2)
+    assert harness.states[-1].data == "AS_OFF"
+
+
+def test_safety_report_silence_stops_while_commands_continue(harness):
+    harness.auto_cmd = Twist()
+    harness.auto_cmd.linear.x = 2.0
+    harness.send(harness.mission_pub, String, "autonomous")
+    harness.wait_until(lambda: harness.states[-1].data == "AS_READY")
+    harness.send(harness.cmd_pub, String, "start")
+    harness.wait_until(lambda: harness.states[-1].data == "AS_DRIVING")
+    harness.safety_enabled = False
+    harness.wait_until(lambda: harness.states[-1].data == "AS_EMERGENCY")
+    harness.muxed.clear()
+    harness.spin(.2)
+    assert harness.muxed and all(m.linear.x == 0 for m in harness.muxed)
+
+
+def test_none_steering_start_never_emits_pid(harness):
+    harness.controller_mode = 1
+    harness.auto_cmd = Twist()
+    harness.auto_cmd.linear.x = 2.0
+    harness.send(harness.mission_pub, String, "autonomous")
+    harness.wait_until(lambda: harness.states[-1].data == "AS_READY")
+    harness.spin(.2)
+    harness.steer_modes.clear()
+    harness.send(harness.cmd_pub, String, "start")
+    harness.wait_until(lambda: harness.states[-1].data == "AS_DRIVING")
+    harness.spin(.2)
+    assert harness.steer_modes
+    assert all(list(m.payload) == [1] for m in harness.steer_modes)

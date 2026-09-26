@@ -20,9 +20,13 @@ class FakeNode:
 
     def __init__(self):
         self.published_missions = []
+        self.published_state_commands = []
 
     def publish_mission(self, mission):
         self.published_missions.append(mission)
+
+    def publish_state_cmd(self, command):
+        self.published_state_commands.append(command)
 
     def get_logger(self):
         return self
@@ -225,11 +229,17 @@ class TestWebSocket:
         assert srv.state.snapshot()["mission"] == "autocross"
         s.close()
 
-    def test_state_command(self, srv):
+    @pytest.mark.parametrize("initial, requested, command", [
+        ("idle", "running", "start"), ("ebs", "running", "start"),
+        ("ebs", "reset", "reset"), ("running", "idle", "stop"),
+    ])
+    def test_state_command_waits_for_confirmation(self, srv, initial, requested, command):
+        srv.state.update("state", initial)
         s = _blocking_ws_connect(srv.port)
-        _ws_send_text(s, json.dumps({"action": "set_state", "state": "running"}))
+        _ws_send_text(s, json.dumps({"action": "set_state", "state": requested}))
         time.sleep(0.3)
-        assert srv.state.snapshot()["state"] == "running"
+        assert srv.node.published_state_commands == [command]
+        assert srv.state.snapshot()["state"] == initial
         s.close()
 
     def test_invalid_mission_ignored(self, srv):

@@ -1,6 +1,7 @@
 """Exercise production detection/timeout callbacks without requiring ROS."""
 
 import ast
+import math
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -33,7 +34,7 @@ def node():
     methods = [n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name in names]
     module = ast.Module(body=[ast.ImportFrom(module="__future__", names=[
         ast.alias(name="annotations")], level=0), *methods], type_ignores=[])
-    namespace = {"Twist": Twist}
+    namespace = {"Twist": Twist, "math": math}
     exec(compile(ast.fix_missing_locations(module), str(path), "exec"), namespace)
     callback_class = type("Callbacks", (), {name: namespace[name] for name in names})
     instance = callback_class()
@@ -82,3 +83,11 @@ def test_perception_silence(node, mode, expected):
 def test_blind_throttle_with_visible_cones(node):
     node._on_detections(SimpleNamespace(detections=[detection(2)]))
     assert node.commands[0].linear.x == node.max_speed
+
+
+@pytest.mark.parametrize("coordinate", [float("nan"), float("inf"), -float("inf")])
+def test_nonfinite_perception_stops_before_controller_math(node, coordinate):
+    node._on_detections(SimpleNamespace(detections=[detection(coordinate)]))
+    assert node._detection_invalid
+    assert node.commands[-1].linear.x == 0
+    assert node.commands[-1].angular.z == 0

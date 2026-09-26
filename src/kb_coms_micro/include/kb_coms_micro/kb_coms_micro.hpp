@@ -37,6 +37,7 @@ class KB_coms_micro : public rclcpp::Node {
       ESP_PNEUMATIC           = 0x0C,
       ESP_STEER_PID           = 0x0D,
       ESP_PEDALS              = 0x0E,
+      ESP_SAFETY_STATUS       = 0x0F,
 
       // ==========================
       // Orin --> ESP32 (0x20 - 0x3F)
@@ -53,6 +54,7 @@ class KB_coms_micro : public rclcpp::Node {
       ORIN_STEER_MODE         = 0x29,
       ORIN_COMPRESSOR_DISABLE = 0x2A,
       ORIN_STEER_PID          = 0x2B,
+      ORIN_SAFETY_RESET       = 0x2C,
 
       // ==========================
       // Others (0x40 - 0xFF)
@@ -63,6 +65,8 @@ class KB_coms_micro : public rclcpp::Node {
     void kb_coms_RXcallback(const SerialDriver::Frame &frame);
 
     void kb_coms_TXcallback(const kb_interfaces::msg::Frame::SharedPtr msg);
+
+    rclcpp::Subscription<kb_interfaces::msg::Frame>::SharedPtr orin_safety_reset_sub_;
 
     std::unique_ptr<SerialDriver> serial_;
 
@@ -91,6 +95,8 @@ class KB_coms_micro : public rclcpp::Node {
     rclcpp::Publisher<kb_interfaces::msg::Frame>::SharedPtr esp_pneumatic_pub_;
     rclcpp::Publisher<kb_interfaces::msg::Frame>::SharedPtr esp_steer_pid_pub_;
     rclcpp::Publisher<kb_interfaces::msg::Frame>::SharedPtr esp_pedals_pub_;
+
+    rclcpp::Publisher<kb_interfaces::msg::Frame>::SharedPtr esp_safety_pub_;
 
     // Declaration of all subscribers
     rclcpp::Subscription<kb_interfaces::msg::Frame>::SharedPtr orin_throttle_sub_;

@@ -2167,3 +2167,52 @@ not evidence that its code failed. The dashboard server optimistically sets
 Start indication. A Stop command restored AS_READY; live throttle remained `[0]`.
 No Start command was issued in this recovery, and physical pedal isolation is
 still awaiting an operator measurement.
+
+
+## 2026-09-26 — Sensor safety implementation and command-runner recovery
+
+Rubén requested a fast safety module separate from the one-second health reporting
+loop. Firmware work is in kart-medulla (`km_safety`); the Orin supervisor validates
+its status, inhibits startup, latches runtime faults and requires an acknowledged
+explicit reset. The dashboard reports inhibition/fault reasons and waits for
+confirmed state instead of optimistically showing Start as accepted.
+`.agents/sensor-safety.md` defines required sensors, operating modes and remaining
+physical limits. The design preserves autonomous None steering with healthy
+sensors while denying propulsion in remote open-loop bench steering.
+
+Local `exec_command` repeatedly failed with `EMFILE` before SSH could start. The
+worker measured the parent command runner at its soft 256-handle limit, with 168
+pipe descriptors and duplicate plugin process suites. Terminating unused CapCut,
+Fusion and search tool children released their pipes; `exec_command true` then
+succeeded. This was a Mac-side resource failure, not an Orin connection limit.
+
+Target access: `ssh orin-remote` returned hostname `orin` and active kart-brain;
+the brain working tree had only its pre-existing modified ZED-wrapper submodule.
+Physical sensor connections, actuator isolation and shutdown-circuit wiring were
+not measured. No firmware flash is authorized by the unverified isolation state.
+`ssh -o ConnectTimeout=8 utm` timed out at 192.168.64.3, so VM deployment remains open.
+
+### 2026-09-26 — Additional command-runner recovery verification
+
+The Codex worker PID 98858 had 251 numeric file descriptors in `lsof -nP -p 98858 -F pft`, including 168 pipes. `launchctl limit maxfiles` reported a soft limit of 256; a shell launched by the worker also reported `ulimit -n` as 256. Four sleeping `evaluate mcp` children of that worker (14681, 88459, 99125, 99247) were terminated with SIGTERM. Subsequent normal execution succeeded, including five sequential `/usr/bin/true` child launches. A later `lsof` count was 180 descriptors. Other concurrent cleanup may also have contributed to that reduction. This clears the immediate exhaustion but does not raise the worker limit or prove helper accumulation is permanently resolved. No kart service was restarted for this recovery.
+
+
+Verification: `PYTHONPATH=src/kb_dashboard uv run --no-project --with pytest
+--with numpy --with aiohttp --with pyyaml python -m pytest src/kart_control/test
+src/kb_dashboard/test -q` passed 458 tests with one ROS-only module skipped on the
+Mac. An isolated `/tmp/kart-safety-test` workspace on the Orin built five packages
+(kb_interfaces, kb_serial_driver_lib, kb_coms_micro, kb_dashboard, kart_control).
+`ROS_DOMAIN_ID=73 ROS_LOCALHOST_ONLY=1 python3 -m pytest
+src/kart_control/test/test_state_machine_launch.py -q` passed six ROS tests, including
+startup inhibition, sensor faults, status silence, explicit reset acknowledgment
+and None steering never emitting a position-loop command on Start. Dashboard
+screenshots were inspected at 844×390 and 1280×800. Firmware final evidence is
+kart-medulla dev `a7386fb`: 74 native tests and both board builds passed.
+
+A cold review caught and fixed consumed reset-token retries, critical bench faults,
+mission/state packet ordering, nonfinite perception and a transient steering-mode
+change on Start. Firmware now also refuses remote drive outside its explicit OFF
+state and reserves physical pedal ownership for manual OFF without a latch.
+`origin/main` had three historical merge/revert commits absent from dev but no
+content difference against their merge base; merging it into dev succeeded without
+changing the implementation before the safety commit.
