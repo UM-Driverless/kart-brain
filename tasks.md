@@ -14,7 +14,7 @@ the archive whole, only once its last step closes.
 
 ## Ready
 
-- [→ 2026-09-26 agent:root] **Fix constant throttle, blind mode and verify on the kart.** Trace empty perception frames and mission gating; verify commanded throttle and Stop.
+- [⏸ reconnect ESP32 USB-UART cable; VM offline] **Verify blind throttle at the actuator and deploy to the VM.** Controller fix `338ad50` is deployed and running on the Orin; 184 local tests pass and live empty-frame throttle is constant. The Orin sees only the native USB debug connector, while firmware uses UART0; reconnect the UART connector and verify movement plus Stop. `ssh utm` times out, so its deployment remains pending.
 
 - [⏸ calibration and target access] **Display calibrated motor-Hall speed and validate on the kart.**
   Dashboard integration is implemented on `dev`, retaining raw counts and showing

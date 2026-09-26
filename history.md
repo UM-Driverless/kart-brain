@@ -2066,3 +2066,23 @@ was asked to reconnect through the UART connector. No serial default was changed
 The dashboard showed READY after a Stop command, with blind throttle and steering
 None selected. The Orin initially ran commit `5a192bb`, with a copied dashboard
 installation; deployment therefore requires a rebuild, not only a pull.
+
+Deployment: pushed `338ad50` to `dev`, pulled it on `orin-remote`, rebuilt
+`kart_control`, `kart_bringup`, `kb_coms_micro`, and `kb_dashboard` with
+`--symlink-install`, then restarted `kart-brain`. The dashboard build needed a
+fresh package build directory (see `.agents/error-log.md`). The running control
+script resolves to `src/kart_control/scripts/cone_follower_node.py`; the dashboard
+now uses an egg-link. Reloading the visible dashboard verified the updated page,
+then AUTO, steering None, and Constant Throttle (blind) were selected.
+
+A four-second ROS subscriber probe measured 356 empty detection arrays and 357
+autonomous commands, all `[2.625, 0.0]`. In AS_READY, all 401 mux commands were
+zero and all 402 throttle frames were `[0]`. A subsequent Start/Stop probe found
+the system already driving before its own Start (the journal confirms earlier
+Start commands); therefore it did not independently test the READY-to-DRIVING
+transition. It measured `[133]` throttle while driving and `[0]` after Stop.
+`ros2 topic echo /kart/state --once` confirmed AS_READY afterwards. No actuator
+response is claimed: the USB-UART by-id path remained absent. Reconnecting the
+UART cable and verifying movement remain blocked on physical access.
+`ssh -o BatchMode=yes -o ConnectTimeout=6 utm hostname` timed out, so VM deployment
+also remains open. Both follow-ups are in `tasks.md`, indexed from vault tasks.

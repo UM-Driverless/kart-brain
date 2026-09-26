@@ -729,3 +729,15 @@ The existing state-pill renderer requires the full dashboard snapshot and threw 
 the absent `state` field. The harness now starts from `DashboardState.snapshot()`
 and overrides the tested fields. The repeated check passed at both screen sizes;
 use the real default snapshot for future partial-telemetry browser fixtures.
+
+## 2026-09-26 — Incremental dashboard rebuild missed new data file (GPT-6 Astra)
+
+Deploying `338ad50` over the Orin's older `5a192bb` installation failed with
+`No such file or directory: .../share/kb_dashboard/config/hall_speed.yaml`.
+Moving only `build/kb_dashboard` to `/tmp/` and rerunning
+`colcon build --symlink-install --packages-select kb_dashboard` succeeded.
+The retained build directory was implicated; the exact setuptools cache entry
+was not isolated. When a newly added data file fails to install during an
+incremental build, rebuild that package from a fresh build directory before
+changing source paths. The first restart attempt used `sudo -n`, which required
+a password; use the documented authenticated sudo path on this host.
