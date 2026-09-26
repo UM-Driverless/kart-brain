@@ -2086,3 +2086,28 @@ response is claimed: the USB-UART by-id path remained absent. Reconnecting the
 UART cable and verifying movement remain blocked on physical access.
 `ssh -o BatchMode=yes -o ConnectTimeout=6 utm hostname` timed out, so VM deployment
 also remains open. Both follow-ups are in `tasks.md`, indexed from vault tasks.
+
+## 2026-09-26 — UART reconnection and constant-throttle code review
+
+Rubén reports peers moved the ESP32 cable from its USB connector to its UART
+connector and that this resolved the signal failure. A subsequent read-only
+`ssh orin-remote` check found the configured CH343 by-id path restored and
+`ros2 topic echo /esp32/heartbeat --once` returned type 8, payload 905183.
+The sampled state was AS_EMERGENCY; this review did not reset or drive the kart.
+
+The fixed blind mode preserves `max_speed` for empty, filtered-empty, and absent
+detections; normal constant throttle still requires cones. The configured
+2.625 command divided by the bridge's 5.0 scale is 52.5% before byte quantization.
+Stop gates the command to zero, not an active braking request. The 184 existing
+blind-throttle, state-logic and constant-speed tests passed again.
+
+Two additional gaps were recorded in tasks.md rather than silently changing
+control behavior during a requested review. First, the state machine and bridge
+retain commands without expiration. A local probe compiled the actual
+`_mux_tick` method, supplied one 2.625 autonomous command, and called it 1000
+times without new input: every output remained 2.625 until Stop made it zero.
+This is a software reproduction, not an on-kart failure test. Second, the
+hardware launch gates `cone_follower` on `perception`, so disabling perception
+also disables the blind-mode command producer. A Luna documentation worker was
+assigned the connector and related operating/troubleshooting documentation in
+the separate kart-docs repository.

@@ -14,7 +14,11 @@ the archive whole, only once its last step closes.
 
 ## Ready
 
-- [⏸ reconnect ESP32 USB-UART cable; VM offline] **Verify blind throttle at the actuator and deploy to the VM.** Controller fix `338ad50` is deployed and running on the Orin; 184 local tests pass and live empty-frame throttle is constant. The Orin sees only the native USB debug connector, while firmware uses UART0; reconnect the UART connector and verify movement plus Stop. `ssh utm` times out, so its deployment remains pending.
+- [ ] **Expire stale controller commands before forwarding throttle.** Code review on 2026-09-26 reproduced 1000 calls to the production `_mux_tick` with no new autonomous command, all forwarding the cached 2.625 while driving. `state_machine_node.py` stores commands without timestamps, and `cmd_vel_bridge_node.py` also repeats its cached effort. Add command-age checks and regression tests at both boundaries; verify a stopped publisher produces zero throttle without relying on the serial-link watchdog.
+
+- [ ] **Allow blind throttle when perception is disabled at launch.** `kart_bringup/launch/launch.py` places `cone_follower` behind `IfCondition(perception)`, so `perception:=false` removes the producer of blind throttle despite the mode supporting absent detections. Separate controller availability from camera/perception startup and test the no-perception launch.
+
+- [⏸ actuator validation; VM offline] **Verify blind throttle at the actuator and deploy to the VM.** Controller fix `338ad50` is deployed and running on the Orin; 184 local tests pass and live empty-frame throttle is constant. On 2026-09-26, Rubén confirmed moving the cable from USB to UART resolved the signal failure; the CH343 device and ESP32 heartbeat were then observed. Physical movement plus Stop remain unverified by the agent. `ssh utm` times out, so its deployment remains pending.
 
 - [⏸ calibration and target access] **Display calibrated motor-Hall speed and validate on the kart.**
   Dashboard integration is implemented on `dev`, retaining raw counts and showing
