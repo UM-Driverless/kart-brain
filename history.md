@@ -2038,3 +2038,31 @@ the end-to-end capture, reporting, speed formula, calibration and validity limit
 The physical Hall-power arrangement must be checked before a powered-sensor,
 unpowered-actuator rolling calibration; that prerequisite is tracked in `tasks.md`.
 No dashboard runtime or calibration value changed in this documentation update.
+
+## 2026-09-26 — Blind-throttle investigation bench state
+
+Rubén reports the kart is powered and authorizes movement for diagnosing the
+dashboard's constant-throttle blind mode. `ssh orin-remote` confirms host `orin`,
+active `kart-brain` service, and `/dev/ttyACM0` present. The local access point SSH
+address timed out. Connected sensors and actuator power have not yet been measured;
+no hardware is reported deliberately absent.
+
+The controller defect is reproduced by executing its actual detection callback:
+empty frames refresh `last_detection_time`, suppressing the silence fallback,
+and then unconditionally zero throttle. The fix preserves throttle only in
+`constant_throttle_blind`; empty frames still command zero steering, and other
+modes still stop. Regression tests failed in the three blind/empty cases before
+the fix. `uv run --no-project --with pytest python -m pytest -q
+src/kart_control/test/test_blind_throttle.py
+src/kart_control/test/test_state_logic.py
+src/kart_control/test/test_constant_speed.py` passes all 184 tests afterwards.
+
+Live checks found a second independent obstruction: `journalctl -u kart-brain`
+repeatedly reports the configured CH343 USB-UART by-id path missing.
+`ls -l /dev/serial/by-id/` instead exposes only the Espressif native USB debug
+port (303a:1001); a 115200-baud read returns ESP-ROM boot text. The current
+kart-medulla source initializes UART0 for binary kart traffic. The operator
+was asked to reconnect through the UART connector. No serial default was changed.
+The dashboard showed READY after a Stop command, with blind throttle and steering
+None selected. The Orin initially ran commit `5a192bb`, with a copied dashboard
+installation; deployment therefore requires a rebuild, not only a pull.

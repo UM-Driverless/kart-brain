@@ -725,10 +725,11 @@ class ConeFollowerNode(Node):
             steer, _ = self._control_geometric(cones)
         speed = self._compute_speed(steer, nn_out, cones)
 
-        # Safety: if no cones visible, slow down and keep last steer
-        # (don't hard-stop — cones may reappear after a curve transition)
+        # Empty frames must match perception silence: only the explicit blind
+        # mode keeps its throttle, and all modes command zero steering.
         if not cones:
-            speed = 0.0
+            if self.speed_controller_type != "constant_throttle_blind":
+                speed = 0.0
             steer = 0.0
 
         cmd = Twist()

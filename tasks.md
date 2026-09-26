@@ -14,6 +14,8 @@ the archive whole, only once its last step closes.
 
 ## Ready
 
+- [→ 2026-09-26 agent:root] **Fix constant throttle, blind mode and verify on the kart.** Trace empty perception frames and mission gating; verify commanded throttle and Stop.
+
 - [⏸ calibration and target access] **Display calibrated motor-Hall speed and validate on the kart.**
   Dashboard integration is implemented on `dev`, retaining raw counts and showing
   no speed when uncalibrated, stale or without observed pulses. Local checks are
