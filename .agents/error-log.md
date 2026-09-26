@@ -771,3 +771,26 @@ publishers on repeated process starts; wait for subscriptions and observed state
 Mac tar extended attributes created AppleDouble metadata in the isolated Orin test
 workspace. Remove those generated files there and use COPYFILE_DISABLE=1 for future
 source archives. These setup failures are distinct from product test results.
+
+## 2026-09-26 — Stopped before resolving autonomous pedal acceleration (GPT-6 Astra)
+
+Rubén reported that the physical accelerator still increased kart speed in
+Autonomous with Speed Zero, and increased speed above the electronic command in
+Constant Throttle (blind). The investigation established zero outgoing Orin
+commands and identified firmware source selection and the physical selector/wiring
+as remaining hypotheses. It did not establish what the ESP32 received, which
+source it selected, or the actual motor-controller input voltage.
+
+The assistant ended with hypotheses and a request for measurements before
+exhausting the available software investigation. After recovering the local
+command runner from file-descriptor exhaustion, it also ended at the recovery
+report instead of clearly preserving and resuming the unresolved kart task. The
+user had to ask whether the cause had actually been found; it had not.
+
+Prevention: retain the original fault as the active objective across tool repairs.
+Continue every unblocked diagnostic step until the cause is isolated and the fix
+is verified. When a physical measurement is genuinely the remaining blocker,
+state exactly what cannot be observed remotely, the measurement needed, and which
+hypotheses its outcomes distinguish. A zero command at the Orin is evidence about
+that boundary only, not proof of zero throttle at the motor controller. Do not
+present an investigation checkpoint or recovery of tooling as task completion.
