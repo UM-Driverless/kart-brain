@@ -596,7 +596,7 @@ function updateBenchControls(d) {
     ? (active ? `Tank pressure bypass ON; steering disabled; throttle capped at ${cap}%. ${pressure}. This button does not Start the kart.`
                : requested ? `${reason}. ${pressure || 'Tank-pressure bypass inactive'}. Press to turn the request OFF.`
                : (running ? 'Stop the kart before enabling the tank-pressure bypass'
-                          : `${reason}. Enable tank-pressure bypass; Start remains separate`))
+                          : `${reason}. ${pressure || 'Tank pressure healthy'}. Enable tank-pressure bypass; Start remains separate`))
     : `Tank-pressure bypass unavailable: ${reason}`;
 
   range.max = input.max = String(cap);
