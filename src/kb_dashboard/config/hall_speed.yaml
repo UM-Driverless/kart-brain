@@ -1,7 +1,7 @@
 kb_dashboard:
   ros__parameters:
     use_hall_speed: true
-    # Sum of rising + falling edges across all three motor Hall channels per metre.
-    # Measure by rolling a known distance in one direction and dividing the total
-    # count increase by that distance. 0.0 means uncalibrated, never assume a scale.
-    hall_edges_per_metre: 0.0
+    # Default scale is derived from the named drivetrain constants in hall_speed.py.
+    # 22.8 complete pulses/channel/wheel turn = 136.8 combined edges/wheel turn.
+    # Override hall_edges_per_metre with measured combined edges / rolled metres
+    # for a rolling calibration, or explicitly set 0.0 to mark it uncalibrated.

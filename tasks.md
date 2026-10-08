@@ -26,18 +26,19 @@ the archive whole, only once its last step closes.
 
 - [⏸ actuator validation; VM offline] **Verify blind throttle at the actuator and deploy to the VM.** Controller fix `338ad50` is deployed and running on the Orin; 184 local tests pass and live empty-frame throttle is constant. On 2026-09-26, Rubén confirmed moving the cable from USB to UART resolved the signal failure; the CH343 device and ESP32 heartbeat were then observed. A paired 5% elevated-wheel bench runtime/image is prepared and tested (2026-10-08), and both are deployed after power recovery. Live AS_READY/zero output and paired bench identity are verified; a five-second pilot after physical Auto confirmation reached AS_DRIVING at 12/255 effort and returned to READY/zero after Stop, but Hall counters stayed 75/77/77. The revised 30% electrical-ceiling image is installed; separate 18/20/22% three-second trials had zero Hall deltas (41/39/38), with no visible motion confirmed by the operator at 18/20%. Higher trials were held after an external dashboard state change; READY/zero were restored. Coordinate one command writer before continuing and distinguish the actual analog path/controller threshold; physical motor response and Stop remain unverified. Restore production artifacts afterward. Physical commanded movement plus Stop remain unverified by the agent. `ssh utm` times out, so its deployment remains pending.
 
-- [⏸ calibration and target access] **Display calibrated motor-Hall speed and validate on the kart.**
-  Dashboard integration is implemented on `dev`, retaining raw counts and showing
-  no speed when uncalibrated, stale or without observed pulses. Local checks are
-  recorded in `history.md`; on-kart validation remains open.
-  No verified traction-motor pole count, current sprocket ratio or tire rolling
-  circumference was found in the records. Measure combined Hall edges per metre to
-  calibrate without guessing those values. The bare PCB is on the Mac with no sensors.
-  Before rolling calibration, verify how the motor Halls can remain powered with
-  traction and steering actuator power isolated; the physical supply arrangement
-  has not been validated.
-  Orin/VM deployment is currently blocked by SSH connectivity (2026-09-19).
-  The Mac USB serial port also disappeared before the dashboard live-board check.
+- [⏸ physical calibration and runtime coordination] **Validate nominal motor-Hall speed on the kart.**
+  Dashboard speed now defaults to named drivetrain constants: 11-inch wheel diameter,
+  76/10 chain reduction and a nominal 3 complete pulses per motor turn per channel.
+  That gives 22.8 pulses/channel/wheel turn, or 136.8 combined rising/falling edges
+  per wheel turn (155.8510824 edges/metre). A measured ROS parameter override remains
+  available; explicit zero marks speed uncalibrated. Local dashboard tests pass.
+  The motor's 3-pulse assumption and loaded rolling circumference still need a
+  physical check. The earlier 23±1 count has no confirmed edge-count convention;
+  if it was a dashboard per-channel edge delta, the nominal prediction is 45.6.
+  Before rolling calibration, verify the motor Hall supply with actuator power isolated.
+  Orin SSH works via orin-remote on 2026-10-08, but another active chat owns bench
+  control verification: do not restart its ROS processes without coordination.
+  VM deployment is still blocked by SSH timeout to utm (192.168.64.3).
 
 - [ ] **Reconcile stale environment pointers.** README lists the dashboard LAN port
   as 9090, but hardware launch files use 80. `.agents/README.md` lists old SSH/VM

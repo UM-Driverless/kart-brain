@@ -1,6 +1,6 @@
 import pytest
 
-from kb_dashboard.hall_speed import HallSpeed
+from kb_dashboard.hall_speed import HallSpeed, NOMINAL_HALL_EDGES_PER_METRE
 
 
 def sample(edges, **kwargs):
@@ -14,6 +14,15 @@ def test_calibrated_speed_sums_three_channels():
     assert result["hall_status"] == "moving"
     assert result["hall_edge_rate_hz"] == 300
     assert result["hall_speed_mps"] == 3
+
+
+def test_nominal_drivetrain_converts_five_wheel_turns_to_distance():
+    # 5 turns × 7.6 motor turns × 3 complete pulses × 2 edges = 228/channel.
+    hall = HallSpeed(NOMINAL_HALL_EDGES_PER_METRE)
+    hall.ingest(sample([0, 0, 0]), 0.0)
+    result = hall.ingest(sample([228, 228, 228]), 2.0)
+    assert result["hall_status"] == "moving"
+    assert result["hall_speed_mps"] == pytest.approx(5 * 0.8777609874129881 / 2)
 
 
 def test_uncalibrated_and_single_dead_channel_are_not_speed():

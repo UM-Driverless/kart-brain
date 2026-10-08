@@ -26,6 +26,7 @@ from vision_msgs.msg import Detection3DArray
 
 from geometry_msgs.msg import Twist
 
+from kb_dashboard.hall_speed import NOMINAL_HALL_EDGES_PER_METRE
 from kb_dashboard.protocol import (
     DashboardState,
     ORIN_COMPRESSOR_DISABLE,
@@ -72,7 +73,7 @@ class DashboardNode(Node):
         self.port = self.get_parameter("port").value
         self.password = self.get_parameter("password").value
         self.declare_parameter("use_hall_speed", True)
-        self.declare_parameter("hall_edges_per_metre", 0.0)
+        self.declare_parameter("hall_edges_per_metre", NOMINAL_HALL_EDGES_PER_METRE)
         self._use_halls = self.get_parameter("use_hall_speed").value
         self.state.configure_hall_speed(
             self.get_parameter("hall_edges_per_metre").value, self._use_halls)
