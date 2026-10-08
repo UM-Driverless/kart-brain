@@ -575,9 +575,10 @@ function updateBenchControls(d) {
 
   if (benchThrottleDraft) {
     const accepted = actual !== null && Math.abs(actual - benchThrottleDraft.percent) < 0.05;
-    const rejected = reason !== benchThrottleDraft.reason;
-    const timedOut = performance.now() - benchThrottleDraft.sentAt > 2500;
-    if (accepted || rejected || timedOut) benchThrottleDraft = null;
+    if (accepted) benchThrottleDraft = null;
+    else if (reason !== benchThrottleDraft.reason && reason !== 'Applying throttle setting') {
+      benchThrottleDraft.rejectedReason = reason;
+    }
   }
 
   btn.classList.toggle('on', enabled);
@@ -595,8 +596,11 @@ function updateBenchControls(d) {
   if (actual === null) {
     applied.textContent = available ? 'Applied --' : reason;
   } else {
-    const pending = benchThrottleDraft ? `Requested ${benchThrottleDraft.percent.toFixed(1)}% · ` : '';
-    applied.textContent = `${pending}Applied ${actual.toFixed(1)}% · ${cap.toFixed(0)}% ceiling${enabled ? '' : ' · '+reason}`;
+    const pending = benchThrottleDraft
+      ? `Requested ${benchThrottleDraft.percent.toFixed(1)}% · ${benchThrottleDraft.rejectedReason ? 'Rejected: '+benchThrottleDraft.rejectedReason+' · ' : ''}`
+      : '';
+    const status = enabled || (benchThrottleDraft && benchThrottleDraft.rejectedReason) ? '' : ' · '+reason;
+    applied.textContent = `${pending}Applied ${actual.toFixed(1)}% · ${cap.toFixed(0)}% ceiling${status}`;
     if (!benchThrottleDraft && document.activeElement !== range) range.value = String(actual);
     if (!benchThrottleDraft && document.activeElement !== input) input.value = actual.toFixed(1);
   }
@@ -615,7 +619,7 @@ function setBenchThrottle(raw) {
   percent = Math.max(0, Math.min(cap, percent));
   $('benchThrottleRange').value = String(percent);
   $('benchThrottleInput').value = percent.toFixed(1);
-  benchThrottleDraft = {percent, reason: String(lastData.bench_mode_reason || ''), sentAt: performance.now()};
+  benchThrottleDraft = {percent, reason: String(lastData.bench_mode_reason || ''), rejectedReason: ''};
   wsSend({action:'set_bench_throttle', percent});
 }
 // The backend repeats authoritative bench status at 10 Hz. A frozen ON button would be unsafe
