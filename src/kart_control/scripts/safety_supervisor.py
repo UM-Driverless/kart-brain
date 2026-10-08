@@ -25,7 +25,8 @@ RESET_TIMEOUT = 2.0
 
 
 class SafetySupervisor:
-    def __init__(self):
+    def __init__(self, bench_throttle=False):
+        self.bench_throttle = bench_throttle is True
         self.logic = StateLogic()
         self.status = None
         self.status_time = None
@@ -83,8 +84,19 @@ class SafetySupervisor:
         self.controller_reason = reason
         self.controller_time = now
 
+    def bench_throttle_authorized(self, now):
+        return (self.bench_throttle and self.mission == "autonomous"
+                and self.controller_mode == 1 and self.fresh_status(now)
+                and bool(self.status[3] & 16))
+
+    def blocking_faults(self, now):
+        faults = self.status[1]
+        return faults & ~4 if self.bench_throttle_authorized(now) else faults
+
     def ready(self, now):
-        return (self.fresh_status(now) and self.status[1] == 0
+        return (self.fresh_status(now) and self.blocking_faults(now) == 0
+                and ((not self.bench_throttle and not self.status[3] & 16)
+                     or self.bench_throttle_authorized(now))
                 and self.status[2] == 0 and bool(self.status[3] & 1)
                 and self.controller_ready(now))
 
@@ -105,7 +117,7 @@ class SafetySupervisor:
     def on_safety(self, payload, now):
         valid = (len(payload) == 6 and all(isinstance(v, int) for v in payload)
                  and payload[0] == 1 and 0 <= payload[1] <= 511
-                 and 0 <= payload[2] <= 511 and 0 <= payload[3] <= 15
+                 and 0 <= payload[2] <= 511 and 0 <= payload[3] <= 31
                  and 0 <= payload[4] <= 2147483647 and 0 <= payload[5] <= 8
                  and bool(payload[3] & 2) == bool(payload[2]))
         if not valid:
@@ -244,6 +256,10 @@ class SafetySupervisor:
             return self._trip_reason + "; repair the fault, then press Reset"
         if not self.fresh_status(now):
             return "Waiting for fresh firmware safety status for this mission"
+        if self.bench_throttle_authorized(now) and self.ready(now):
+            return "BENCH THROTTLE: 5% cap; steering disabled; " + (
+                "tank pressure too low (bench override active)"
+                if self.status[1] & 4 else "elevated wheels only")
         faults = self.status[1] | self.status[2]
         if faults:
             return self._fault_text(faults)

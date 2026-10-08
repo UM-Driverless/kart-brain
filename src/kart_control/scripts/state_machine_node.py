@@ -13,6 +13,7 @@ States follow Formula Student AS (Autonomous System) conventions:
   Any state (except AS_OFF) → AS_EMERGENCY(4)
 """
 
+import os
 import time
 
 import rclpy
@@ -36,7 +37,7 @@ class StateMachineNode(Node):
         """@brief Initialize the state machine in AS_OFF with subscriptions, publishers, and timers."""
         super().__init__("state_machine")
 
-        self._logic = SafetySupervisor()
+        self._logic = SafetySupervisor(bench_throttle=os.environ.get("KART_BENCH_THROTTLE") == "1")
         self._last_auto_cmd = Twist()
         self._last_manual_cmd = Twist()
         self._last_forced_steer_mode = None

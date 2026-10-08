@@ -37,7 +37,7 @@ def test_health_arrival_arms_without_driving(s):
     assert s.state == AS_READY
     assert s.mux((1, .2), (0, 0), 0) == (0, 0)
 
-@pytest.mark.parametrize("payload", [[], [1], [2,0,0,1,0,8], [1,-1,0,1,0,8], [1,0,0,16,0,8], [1,0,0,1,-1,8], [1,0,0,1,0,99], [1,0,0,1,0,8,0]])
+@pytest.mark.parametrize("payload", [[], [1], [2,0,0,1,0,8], [1,-1,0,1,0,8], [1,0,0,32,0,8], [1,0,0,1,-1,8], [1,0,0,1,0,99], [1,0,0,1,0,8,0]])
 def test_bad_status_trips_running_kart(s, payload):
     driving(s)
     s.on_safety(payload, .1)
@@ -193,3 +193,67 @@ def test_unsafe_mission_change_retains_original_firmware_mode(s):
     s.on_mission("manual")
     assert s.state == AS_EMERGENCY
     assert s.mission == "autonomous"
+
+
+def bench_ready(enabled=True, mode=1, mission="autonomous", flags=17, faults=4):
+    s = SafetySupervisor(bench_throttle=enabled)
+    s.on_mission(mission)
+    s.on_safety([1,faults,0,flags,0,8],0)
+    s.on_controller_safety("",0)
+    s.on_controller_mode(mode,0)
+    s.note_command("auto",(.25,0),0)
+    s.tick(0)
+    return s
+
+
+def test_bench_throttle_needs_literal_start_and_preserves_tank_notice():
+    s=bench_ready()
+    assert s.state == AS_READY
+    assert s.mux((.25,0),(0,0),0) == (0,0)
+    assert "BENCH THROTTLE" in s.reason(0)
+    assert "tank pressure too low" in s.reason(0)
+    assert s.on_state_cmd("start",0)[0] == AS_DRIVING
+    assert s.mux((.25,0),(0,0),0) == (.25,0)
+    s.on_state_cmd("stop",0)
+    assert s.mux((.25,0),(0,0),0) == (0,0)
+
+
+@pytest.mark.parametrize("kwargs", [dict(enabled=False),dict(mode=0),
+    dict(mission="throttle_test"),dict(flags=1),dict(flags=33),
+    *[dict(faults=4|(1<<bit)) for bit in (0,1,3,4,5,6,7,8)]])
+def test_bench_throttle_rejects_unpaired_identity_mode_or_other_fault(kwargs):
+    s=bench_ready(**kwargs)
+    assert not s.ready(0)
+    assert s.on_state_cmd("start",0)[0] is None
+    assert s.mux((.25,0),(0,0),0) == (0,0)
+
+
+@pytest.mark.parametrize("failure", ["status", "command", "controller", "emergency"])
+def test_bench_throttle_timeouts_and_emergency_stop(failure):
+    s=bench_ready()
+    assert s.on_state_cmd("start",0)[0] == AS_DRIVING
+    if failure != "status":
+        s.on_safety([1,4,0,25,0,8],.6)
+    if failure != "command":
+        s.note_command("auto",(.25,0),.6)
+    if failure != "controller":
+        s.on_controller_safety("",.6)
+        s.on_controller_mode(1,.6)
+    if failure == "emergency":
+        s.on_state_cmd("ebs",.6)
+    s.tick(.6)
+    assert s.state == AS_EMERGENCY
+    assert s.mux((.25,0),(0,0),.6) == (0,0)
+
+
+def test_bench_identity_visible_even_with_healthy_pressure():
+    s=bench_ready(faults=0)
+    assert s.ready(0)
+    assert "BENCH THROTTLE" in s.reason(0)
+    assert "elevated wheels only" in s.reason(0)
+
+
+def test_bench_runtime_requires_paired_firmware_even_with_healthy_pressure():
+    s=bench_ready(flags=1, faults=0)
+    assert not s.ready(0)
+    assert s.on_state_cmd("start",0)[0] is None
