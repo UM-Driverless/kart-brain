@@ -166,7 +166,7 @@ body {
     <div class="spill" id="pillHb">ESP32 --</div>
     <div class="spill sys-chip" id="pillSys">SYS --</div>
   </div>
-  <div style="display:flex;align-items:center;gap:8px">
+  <div class="topbar-actions">
     <button id="netInfoBtn" onclick="toggleNetInfo()"
             title="Dashboard connection info (local IPs for offline access)"
             style="background:transparent;border:1px solid #2a2a3a;color:#888;border-radius:100px;width:22px;height:22px;font-size:11px;cursor:pointer;font-family:sans-serif;line-height:1;padding:0">ⓘ</button>
@@ -180,10 +180,9 @@ body {
     <div class="conn-dot" id="connDot"></div>
     <button id="benchModeBtn" type="button" onclick="toggleBenchMode()"
             title="Tank-pressure bypass unavailable until paired bench firmware and runtime are ready">
-      <span>TANK BYPASS</span><small>UNAVAILABLE</small>
+      <span><i class="safety-light"></i>TANK BYPASS</span><small>UNAVAILABLE</small>
     </button>
-    <span id="benchModeFeedback" role="status" aria-live="polite">Waiting for bypass status</span>
-    <button class="h-ctrl global-ebs" data-st="ebs" onclick="wsSend({action:'set_state',state: this.classList.contains('on') ? 'idle' : 'ebs'})" title="Trigger Emergency Brake System">EBS</button>
+    <button class="h-ctrl global-ebs" data-st="ebs" onclick="wsSend({action:'set_state',state:'ebs'})" title="Trigger the emergency brake; Reset safety clears the latch once faults are resolved"><span><i class="safety-light"></i>EBS</span><small id="ebsButtonStatus">TRIGGER</small></button>
     <button id="powerOffBtn"
             onclick="requestPowerOff()"
             title="Power off the Orin computer (NOT the kart safety shutdown loop / EBS)"
@@ -593,7 +592,7 @@ function updateBenchControls(d) {
   btn.classList.toggle('requested', requested && !active);
   btn.classList.toggle('unavailable', !available);
   btn.disabled = !available || (!requested && running);
-  btn.innerHTML = `<span>TANK BYPASS</span><small>${available ? (active ? 'ON · STEERING OFF · '+cap+'% CAP' : (requested ? 'REQUESTED · INACTIVE' : 'OFF')) : 'UNAVAILABLE'}</small>`;
+  btn.innerHTML = `<span><i class="safety-light"></i>TANK BYPASS</span><small>${available ? (active ? 'ACTIVE' : (requested ? 'PENDING' : 'OFF')) : 'UNAVAILABLE'}</small>`;
   btn.title = available
     ? (active ? `Tank pressure bypass ON; steering disabled; throttle capped at ${cap}%. ${pressure}. This button does not Start the kart.`
                : requested ? `${reason}. ${pressure || 'Tank-pressure bypass inactive'}. Press to turn the request OFF.`
@@ -602,7 +601,7 @@ function updateBenchControls(d) {
     : `Tank-pressure bypass unavailable: ${reason}`;
   feedback.textContent = active
     ? (pressure || 'Bypass active')
-    : (available ? reason : `Unavailable: ${reason}`);
+    : (available ? (requested ? `Bypass pending: ${reason}` : `Tank bypass off · ${reason}`) : `Tank bypass unavailable: ${reason}`);
 
   range.max = input.max = String(cap);
   range.disabled = input.disabled = !available || running;
@@ -1090,13 +1089,18 @@ function updatePills(d) {
   const safety = $('safetyReason');
   if (safety) {
     const reason = typeof d.safety_reason === 'string' ? d.safety_reason : 'Waiting for safety status';
-    safety.textContent = reason || 'Safety inputs healthy';
-    safety.classList.toggle('healthy', reason === '');
+    safety.textContent = d.state === 'ebs'
+      ? 'Movement blocked · ' + (reason || 'Emergency latched. Reset safety when the fault is resolved.')
+      : reason || 'Safety inputs healthy';
+    safety.classList.toggle('healthy', reason === '' && d.state !== 'ebs');
+    safety.classList.toggle('emergency', d.state === 'ebs');
   }
   const ps = $('pillState');
-  ps.textContent = d.state.toUpperCase();
-  ps.className = 'spill'+(d.state==='running'?' act':'');
-  $('pillMission').textContent = d.mission.toUpperCase();
+  ps.textContent = d.state === 'ebs' ? 'EMERGENCY' : d.state.toUpperCase();
+  ps.className = 'spill' + (d.state === 'ebs' ? ' emergency' : d.state === 'running' ? ' act' : '');
+  const ebsLabel = $('ebsButtonStatus');
+  if (ebsLabel) ebsLabel.textContent = d.state === 'ebs' ? 'LATCHED' : 'TRIGGER';
+  $('pillMission').textContent = ({remote_control:'REMOTE', autonomous:'AUTO', acceleration:'ACCEL', inspection:'INSPECT'})[d.mission] || d.mission.replaceAll('_', ' ').toUpperCase();
   $('pillMission').className = 'spill act';
   const ph = $('pillHb');
   // "HB" meant nothing to anyone at the kart. The chip now names the box that went quiet.
@@ -2028,18 +2032,39 @@ body{
 .rc-bsub{ font-size:var(--fs-xs); color:var(--rc-label); letter-spacing:.18em; text-transform:uppercase; margin-top:2px;
   font-weight:700; font-family:'Titillium Web',sans-serif; text-shadow:none; }
 .conn-dot{ background:var(--rc-label-dim); }
-.conn-dot.ok{ background:var(--rc-red); box-shadow:0 0 8px var(--rc-red-glow); animation:rcPulse 1.4s ease-in-out infinite; }
-#benchModeBtn{ width:126px; height:38px; padding:3px 8px; border:1px solid var(--rc-red);
-  background:#2a090d; color:#ff6b76; cursor:pointer; display:flex; flex-direction:column;
-  align-items:center; justify-content:center; gap:1px; font-family:'Titillium Web',sans-serif;
-  font-size:var(--fs-xs); font-weight:700; letter-spacing:.12em; line-height:1; white-space:nowrap; }
-#benchModeBtn small{ font:700 8px/1.1 'Titillium Web',sans-serif; letter-spacing:.06em; }
-#benchModeBtn.on{ background:var(--rc-red); color:#fff; box-shadow:0 0 12px var(--rc-red-glow); }
-#benchModeBtn.requested{ border-color:#f0a030; background:#2a1a09; color:#f0a030; }
+.conn-dot.ok{ background:var(--rc-green); box-shadow:0 0 6px #33d17a66; }
+/* Paired safety controls: amber is a pressure override, red is an emergency latch. */
+.topbar-actions{ display:flex; align-items:center; gap:var(--sp-2); flex:none; }
+#benchModeBtn, .global-ebs{ width:112px; height:38px; flex:none; margin:0; padding:4px 8px;
+  border:1px solid var(--rc-line-hard); border-radius:var(--r-sm); background:var(--rc-raised);
+  color:var(--rc-label); cursor:pointer; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:4px; font:700 var(--fs-xs)/1 'Titillium Web',sans-serif;
+  letter-spacing:.09em; white-space:nowrap; transition:border-color .15s, background .15s; }
+#benchModeBtn span, .global-ebs span{ display:flex; align-items:center; gap:6px; }
+#benchModeBtn small, .global-ebs small{ font:600 var(--fs-xs)/1 'Titillium Web',sans-serif; letter-spacing:.08em; }
+.safety-light{ display:inline-block; width:6px; height:6px; flex:none; border-radius:50%; background:currentColor; opacity:.4; }
+#benchModeBtn{ border-color:#f0a03066; color:var(--rc-amber); background:#241b0e; }
+#benchModeBtn.on{ border-color:var(--rc-amber); background:#443010; color:#ffd17a; }
+#benchModeBtn.on .safety-light{ opacity:1; box-shadow:0 0 9px currentColor; }
+#benchModeBtn.requested{ border-color:var(--rc-amber); }
 #benchModeBtn.unavailable{ border-color:var(--rc-line-hard); background:var(--rc-raised); color:var(--rc-label-dim); }
 #benchModeBtn:disabled{ cursor:not-allowed; opacity:.72; }
-#benchModeFeedback{ max-width:220px; color:#f0a030; font:600 9px/1.15 'Titillium Web',sans-serif;
-  letter-spacing:.04em; text-transform:none; }
+.global-ebs{ border-color:#e2001a99; color:#ff6b76; background:#2a0c10; }
+.global-ebs.on{ animation:none; border-color:var(--rc-red); color:#fff; background:#970e20; box-shadow:0 0 12px #e2001a33; }
+.global-ebs.on .safety-light{ opacity:1; background:#ff8792; box-shadow:0 0 9px #ff3048; animation:safetyBeacon 1.6s ease-in-out infinite; }
+#topbarStatus .spill.emergency{ color:#ff8792; border-color:#e2001a99; background:#2a0c10; font-weight:700; }
+#pillState.emergency::before{ content:''; display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:6px;
+  background:#ff3048; box-shadow:0 0 8px #ff3048; animation:safetyBeacon 1.6s ease-in-out infinite; }
+@keyframes safetyBeacon{ 0%,100%{ opacity:1; } 50%{ opacity:.45; } }
+@media (prefers-reduced-motion:reduce){ .global-ebs.on .safety-light, #pillState.emergency::before{ animation:none; } }
+#benchModeFeedback{ color:var(--rc-amber); font-size:var(--fs-sm); line-height:1.35; overflow-wrap:anywhere; }
+@media(max-width:900px){
+  #topbarTitle{ gap:6px; font-size:12px; }
+  .rc-blogo{ width:26px; height:26px; }
+  #topbarStatus{ margin-left:0; gap:4px; }
+  #topbarStatus .spill{ padding:5px 6px; letter-spacing:.04em; }
+  #benchModeBtn, .global-ebs{ width:96px; }
+}
 @keyframes rcPulse{ 0%,100%{opacity:1;} 50%{opacity:.25;} }
 /* Danger — a gauge in its RED (act-now) zone pulses. Reserve for real danger (battery <15%,
    tank out of range), never amber and never the pedals' brake-red.
@@ -2393,6 +2418,7 @@ body{
 #rcCtrlPane .ctrl-btn{ flex:1 1 40%; }
 .safety-reason{ color:#ffb454; font-size:var(--fs-sm); line-height:1.35; overflow-wrap:anywhere; }
 .safety-reason.healthy{ color:var(--rc-green); }
+.safety-reason.emergency{ color:#ff8792; border-left:2px solid var(--rc-red); padding:7px 10px; background:#e2001a0c; border-radius:var(--r-sm); }
 .ctrl-btn{ flex:1; padding:var(--sp-4) var(--sp-2); border:1px solid var(--rc-line-hard); font-size:var(--fs-sm); font-weight:700;
   letter-spacing:.12em; cursor:pointer; text-transform:uppercase; font-family:'Rajdhani',sans-serif; color:var(--rc-white);
   background:linear-gradient(180deg,#2a2a30,#151519);
@@ -2875,6 +2901,7 @@ body{
           </div>
           <div id="missionSelectionStatus" class="safety-reason" role="status" aria-live="polite"></div>
           <div id="safetyReason" class="safety-reason" role="status" aria-live="polite">Waiting for safety status</div>
+          <div id="benchModeFeedback" role="status" aria-live="polite">Waiting for bypass status</div>
           <div class="ctrl-row"><button class="ctrl-btn go" data-st="running" onclick="wsSend({action:'set_state',state:'running'})">Start</button><button class="ctrl-btn stop" data-st="idle" onclick="wsSend({action:'set_state',state:AUTONOMOUS_MISSIONS.has(currentMission)?'idle':'ebs'})">Stop</button><button class="ctrl-btn" onclick="wsSend({action:'set_state',state:'reset'})">Reset safety</button><button class="ctrl-btn restart" onclick="rcConfirm('Restart kart-brain', 'The ROS stack restarts and telemetry stops for a few seconds. The Orin itself stays up.', { okText: 'Restart' }).then(ok =&gt; { if (ok) wsSend({ action: 'restart' }); })">Restart</button></div>
         </div>
         <div class="rc-panel rc-mpanel rc-joypane" id="rcJoyPane" style="display:none">
@@ -3180,11 +3207,6 @@ body{
       onPick: idx => {
         const m = misNames[idx];
         if (m === misCurrent && !misPending) return;
-        if (lastData.state === 'ebs') {
-          misStatus('Mission unchanged: emergency latched. Resolve the safety fault, then use Reset safety.');
-          misWheel.go(Math.max(0, misNames.indexOf(misCurrent)), false);
-          return false;
-        }
         misPending = m;
         misRequestedAt = performance.now();
         misStatus('Waiting for the kart to confirm ' + misTabs[idx].textContent + '…');
@@ -3204,7 +3226,6 @@ body{
     // normally a no-op; it is what keeps the two in step when the change came from elsewhere.
     window.rcSetCurrentMission = m => {
       if (!m) return;
-      if (!misPending && lastData.state !== 'ebs' && $('missionSelectionStatus').textContent.startsWith('Mission unchanged:')) misStatus('');
       if (misPending) {
         if (m === misPending) {
           misPending = null;

@@ -52,6 +52,7 @@ class SafetySupervisor:
         self._arm_requested = False
         self._remote_active = False
         self._trip_reason = ""
+        self._reset_controller_mission = None
         self._notice = ""
         self._now = 0.0
 
@@ -72,8 +73,9 @@ class SafetySupervisor:
                 and 0 <= now - self.status_time <= STATUS_TIMEOUT
                 and self.status[5] == self.mission_id)
 
-    def controller_ready(self, now):
-        if self.mission not in AUTONOMOUS_MISSIONS or self.mission == "throttle_test":
+    def controller_ready(self, now, mission=None):
+        mission = self.mission if mission is None else mission
+        if mission not in AUTONOMOUS_MISSIONS or mission == "throttle_test":
             return True
         return (self.controller_time is not None
                 and 0 <= now - self.controller_time <= STATUS_TIMEOUT
@@ -149,6 +151,8 @@ class SafetySupervisor:
 
     def reset_inputs_healthy(self, now):
         return (self.fresh_status(now) and self.controller_ready(now)
+                and (self._reset_controller_mission is None
+                     or self.controller_ready(now, self._reset_controller_mission))
                 and (self.status[1] == 0 or (
                     self.mission == "autonomous" and self.bench_reset_inputs(now))))
 
@@ -295,12 +299,14 @@ class SafetySupervisor:
             self._arm_requested = False
             self._remote_active = False
             self._trip_reason = ""
+            self._reset_controller_mission = None
             self.command_times = {"auto": None, "manual": None}
             self.command_valid = {"auto": False, "manual": False}
 
     def _trip(self, reason):
         if self.state != AS_EMERGENCY:
             self._trip_reason = reason
+            self._reset_controller_mission = self.mission
         self.logic.state = AS_EMERGENCY
         self._arm_requested = False
 
@@ -331,14 +337,22 @@ class SafetySupervisor:
             self._trip("Unknown mission")
             return self.state
         if self.state == AS_EMERGENCY:
-            # Do not change the required sensor set to evade a latched fault.
+            if mission != self.mission:
+                # Keep the latch and its controller checks; firmware continues to
+                # report all physical sensor faults regardless of selected mission.
+                self.logic.on_mission(mission)
+                self.pending_reset = None
+                self.reset_time = None
+                self._arm_requested = self._remote_active = False
             return None
         if mission == self.mission and self.state != AS_OFF:
             return None
         self._reset_hold = False
+        old_mission = self.mission
         self.logic.on_mission(mission)
         if self.state == AS_EMERGENCY:
             self._trip_reason = "Mission changed while driving"
+            self._reset_controller_mission = old_mission
         self._remote_active = False
         self._arm_requested = mission in AUTONOMOUS_MISSIONS and self.state != AS_EMERGENCY
         if self._arm_requested:

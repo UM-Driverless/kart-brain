@@ -65,8 +65,6 @@ class StateLogic:
         mission message for 1 s to ensure delivery, and a repeat must never
         trigger a transition (especially not the mid-drive emergency below).
         """
-        if self.state == AS_EMERGENCY:
-            return None
         old = self.mission
         if old == mission:
             return None
@@ -77,6 +75,9 @@ class StateLogic:
             return self._set_state(AS_EMERGENCY)
 
         self.mission = mission
+        # Configuration remains available while stopped by a latched emergency.
+        if self.state == AS_EMERGENCY:
+            return None
         if mission not in AUTONOMOUS_MISSIONS and self.state != AS_OFF:
             return self._set_state(AS_OFF)
         if mission in AUTONOMOUS_MISSIONS and self.state in (AS_OFF, AS_FINISHED):

@@ -199,3 +199,13 @@ def test_deselecting_autonomous_mission_disarms():
     logic = make("autonomous", AS_READY)
     assert logic.on_mission("manual") == AS_OFF
     assert logic.heartbeat_steer_mode() is None
+
+
+@pytest.mark.parametrize('mission', ALL_MISSIONS)
+def test_emergency_allows_mission_selection_without_clearing_latch(mission):
+    logic = make('manual', AS_EMERGENCY)
+    assert logic.on_mission(mission) is None
+    assert logic.mission == mission
+    assert logic.state == AS_EMERGENCY
+    assert logic.mux(AUTO_CMD, MANUAL_CMD) == ZERO_CMD
+    assert logic.on_state_cmd('start') == (None, False)

@@ -435,3 +435,73 @@ def test_emergency_bench_rejection_names_failed_configuration(setting, value, ex
     assert "Stop before" not in s.bench_notice
     assert s.state == AS_EMERGENCY and not s.bench_mode_enabled
     assert s.mission == 'manual' and s.pending_reset is None
+
+
+@pytest.mark.parametrize('mission', ['manual', 'remote_control', 'autonomous', 'throttle_test', 'trackdrive'])
+def test_emergency_mission_selection_preserves_zero_output_and_reset_requirement(s, mission):
+    driving(s)
+    s.on_state_cmd('ebs', 0)
+    assert s.on_mission(mission) is None
+    assert s.mission == mission and s.state == AS_EMERGENCY
+    assert s.mux((2, .3), (2, .3), 0) == (0, 0)
+    assert s.heartbeat_steer_mode() == 1
+    assert not s._arm_requested and not s._remote_active
+    assert s.on_state_cmd('start', 0)[0] is None
+
+
+def test_mission_change_cancels_pending_reset_and_requires_new_attempt(s):
+    driving(s)
+    s.on_state_cmd('ebs', 0)
+    s.on_state_cmd('reset', 0)
+    first = s.pending_reset
+    assert first is not None
+    s.on_mission('manual')
+    assert s.pending_reset is None
+    healthy(s, .1, mission=0, ack=first)
+    assert s.state == AS_EMERGENCY
+    s.on_state_cmd('reset', .1)
+    second = s.pending_reset
+    assert second > first
+    healthy(s, .2, mission=0, ack=second)
+    assert s.state == AS_OFF and s._reset_hold
+    assert s.mux((2, .3), (2, .3), .2) == (0, 0)
+
+
+@pytest.mark.parametrize('mission', ['manual', 'remote_control', 'throttle_test'])
+def test_emergency_mission_selection_cannot_bypass_original_controller_fault(s, mission):
+    driving(s)
+    s.on_controller_safety('Perception missing or stale', .1)
+    s.tick(.1)
+    s.on_mission(mission)
+    s.on_safety([1, 0, 128, 2, 0, s.mission_id], .1)
+    s.on_state_cmd('reset', .1)
+    assert s.pending_reset is None and s.state == AS_EMERGENCY
+    s.on_controller_safety('', .2)
+    s.on_controller_mode(0, .2)
+    s.on_state_cmd('reset', .2)
+    assert s.pending_reset is not None
+
+
+@pytest.mark.parametrize('fault', [1, 2, 4, 8, 16, 32, 64, 256])
+def test_emergency_manual_selection_cannot_bypass_physical_faults(s, fault):
+    driving(s)
+    s.on_safety([1, fault, fault, 2, 0, 8], .1)
+    s.tick(.1)
+    s.on_mission('manual')
+    s.on_safety([1, fault, fault, 2, 0, 0], .1)
+    s.on_state_cmd('reset', .1)
+    assert s.pending_reset is None and s.state == AS_EMERGENCY
+
+
+def test_emergency_selection_preserves_narrow_pressure_bypass():
+    s = bench_emergency()
+    s.on_mission('manual')
+    s.on_safety([1, 4, 192, 18, 0, 0], 0)
+    assert not s.reset_inputs_healthy(0)
+    s.on_mission('autonomous')
+    s.on_safety([1, 4, 192, 18, 0, 8], 0)
+    assert s.reset_inputs_healthy(0)
+    assert s.state == AS_EMERGENCY and not s.bench_mode_enabled
+    assert s.mux((2, 0), (2, 0), 0) == (0, 0)
+    s.on_safety([1, 6, 192, 18, 0, 8], 0)
+    assert not s.reset_inputs_healthy(0)

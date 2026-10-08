@@ -30,11 +30,13 @@ function fixture() {
   };
 }
 
-test('emergency mission selection stays on actual mission and explains refusal', () => {
+test('emergency permits mission selection and waits for actual confirmation', () => {
   const f = fixture(); f.context.lastData.state = 'ebs'; f.pick(2);
-  assert.equal(f.selected(), 'manual');
-  assert.equal(f.sent.length, 0);
-  assert.match(f.elements.missionSelectionStatus.textContent, /emergency latched/);
+  assert.equal(f.selected(), 'remote_control');
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.sent[0].mission, 'remote_control');
+  f.feedback('remote_control');
+  assert.equal(f.elements.missionSelectionStatus.textContent, '');
 });
 
 test('old feedback does not pull a pending selection back; actual acknowledgment clears it', () => {
