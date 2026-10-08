@@ -52,3 +52,9 @@ test('unconfirmed selection returns to actual mission with an explanation', () =
   assert.equal(f.selected(), 'manual');
   assert.match(f.elements.missionSelectionStatus.textContent, /not confirmed/);
 });
+
+test('disconnect clears an unconfirmed selection without claiming it succeeded', () => {
+  const f = fixture(); f.pick(2); f.context.window.rcCancelMissionSelection();
+  assert.equal(f.selected(), 'manual');
+  assert.match(f.elements.missionSelectionStatus.textContent, /Connection lost/);
+});

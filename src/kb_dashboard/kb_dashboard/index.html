@@ -919,6 +919,7 @@ function connect() {
     if (visualFrameId) cancelAnimationFrame(visualFrameId);
     visualFrameId = 0;
     pendingVisualData = null;
+    if (!DEMO && typeof window.rcCancelMissionSelection === 'function') window.rcCancelMissionSelection();
     if (!new URLSearchParams(location.search).has('demo'))
       renderSpeed({esp32_speed:null, speed_source:'motor_halls', hall_status:'stale'});
     // A socket that dies right after an accepted power-off IS the power-off completing —
@@ -3191,6 +3192,12 @@ body{
         if (m === 'inspection') wsSend({ action: 'list_svo' });
       },
     });
+    window.rcCancelMissionSelection = () => {
+      if (!misPending) return;
+      misPending = null;
+      misStatus('Connection lost: mission change was not confirmed.');
+      misWheel.go(Math.max(0, misNames.indexOf(misCurrent)), false);
+    };
     // Called from updateMissions() on every frame. The wheel follows the kart: whatever the
     // mission actually is ends up centred, whether it was changed from here, from another
     // phone, or by the Orin itself. A tap has already animated the wheel there, so this is
