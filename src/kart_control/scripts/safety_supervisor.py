@@ -169,8 +169,28 @@ class SafetySupervisor:
             self.bench_mode_enabled = self._arm_requested = False
             self.bench_notice = "Press Reset Safety, then enable Tank Bypass; propulsion remains OFF"
             return False
-        reason = ("Stop before enabling bench mode" if self.state not in (AS_OFF, AS_READY)
-                  else self.bench_eligibility(now))
+        if self.state == AS_EMERGENCY:
+            # Explain the failed recovery input; Stop cannot clear a safety latch.
+            if not self.bench_available(now):
+                reason = "Fresh paired bench firmware required"
+            elif not self.bench_initialized:
+                reason = "Waiting for verified zero throttle at startup"
+            elif not self.bench_config_fresh(now):
+                reason = "Waiting for controller and bridge settings"
+            elif self.bench_config["steering"] != "none":
+                reason = "Select steering None before preparing Tank Bypass recovery"
+            elif self.bench_config["speed"] not in (
+                    "constant_throttle", "constant_throttle_blind", "constant_throttle_stop"):
+                reason = "Select Constant Throttle (blind) before preparing Tank Bypass recovery"
+            elif self.bench_config["max_speed"] != 0:
+                reason = "Set throttle to 0% before preparing Tank Bypass recovery"
+            elif self.status[1] & ~4:
+                reason = self._fault_text(self.status[1] & ~4) + "; repair before Reset Safety"
+            else:
+                reason = "Waiting for fresh zero commands and disarmed firmware before Reset Safety"
+        else:
+            reason = ("Stop before enabling bench mode" if self.state not in (AS_OFF, AS_READY)
+                      else self.bench_eligibility(now))
         if reason:
             self.bench_notice = reason
             return False

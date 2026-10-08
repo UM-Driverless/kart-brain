@@ -420,3 +420,18 @@ def test_active_pressure_override_keeps_raw_fault_visible():
     assert "bench override active" in s.reason(0)
     s.set_bench_mode(False, 0)
     assert not s.bench_snapshot(0)["bench_mode_active"]
+
+
+@pytest.mark.parametrize("setting,value,expected", [
+    ("steering", "geometric", "Select steering None"),
+    ("speed", "curve_factor", "Select Constant Throttle (blind)"),
+    ("max_speed", 1, "Set throttle to 0%"),
+])
+def test_emergency_bench_rejection_names_failed_configuration(setting, value, expected):
+    s = bench_emergency('manual')
+    s.bench_config[setting] = value
+    assert not s.set_bench_mode(True, 0)
+    assert expected in s.bench_notice
+    assert "Stop before" not in s.bench_notice
+    assert s.state == AS_EMERGENCY and not s.bench_mode_enabled
+    assert s.mission == 'manual' and s.pending_reset is None
