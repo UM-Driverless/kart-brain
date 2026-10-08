@@ -255,3 +255,5 @@ http://<orin-ip>:9090
 ## Blocked
 
 ## Done
+
+- [⏸ Manual confirmation] **Activate 30 Hz dashboard refresh.** Commit 9821e6f is pushed and pulled on Orin; both socket cadence tests pass there. Restart the server after Rubén confirms Manual, then measure live WebSocket cadence. Hall source still needs a separate firmware rate increase.
