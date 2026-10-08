@@ -2263,3 +2263,15 @@ returned HTTP 530 from both public hostnames. Fresh SSH attempts to
 `10.42.0.1`, `10.7.20.142` and `orin-remote` also failed. Wiring readiness did
 not restore the Orin's network path; USB phone tethering or another verified
 internet connection remains the next recovery step.
+
+Rubén then power-cycled the Orin. LAN SSH returned at `10.7.20.142`, and the
+dashboard process answered HTTP 200 on local port 80. The tunnel service was
+stuck activating: outbound QUIC connections timed out, and its 15-second
+systemd startup timeout repeatedly terminated it. Ordinary HTTPS and TCP port
+7844 to Cloudflare both worked, isolating the failure to QUIC over UDP on the
+current lab network. Added a systemd drop-in that starts only `cloudflared`
+with `--protocol http2`; the existing ingress configuration validated before
+the restart. The connector registered over HTTP/2, the service became active,
+`https://kart.rubenayla.xyz` returned the dashboard login page with HTTP 200,
+and a fresh `orin-remote` SSH connection returned hostname `orin`. No
+kart-brain service, firmware, actuator or network setting was changed.
