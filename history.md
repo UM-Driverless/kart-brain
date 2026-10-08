@@ -2487,3 +2487,19 @@ bench-throttle S3 firmware rebuilt on the Orin in 19.19 s with `main.c` compiled
 No firmware flash, service restart, reset or motion command was performed. Safe
 activation and live 20 Hz/rolling/stop validation await steering-motor isolation
 confirmation. `ssh utm` timed out at 192.168.64.3, so VM deployment remains blocked.
+
+
+## 2026-10-08 — Hall telemetry flashed and live cadence verified
+
+Rubén confirmed the physical switch was in Manual and explicitly authorized flashing.
+Stopped `kart-brain`, confirmed `/dev/ttyACM0` was free, and uploaded the updated
+`esp32-s3-bench-throttle` image from firmware source `c11423b`; esptool verified the
+flash hashes and reported success. Restarted the existing bench-opted-in service.
+No motion command was sent. Live `/esp32/hall` measured 19.998 Hz with 49–51 ms
+intervals, and `/esp32/steering` measured about 100 Hz. Safety telemetry was
+[1,4,0,16,0,0]: AS_OFF, tank-low raw fault, no latched fault, bench-image flag set,
+and zero GPIO init error. The authenticated loopback dashboard snapshot reported
+motor_halls, capture initialization success, bits 3, counters [0,0,0], no interval
+yet and warming_up. This verifies fast telemetry reaches the running dashboard;
+physical rolling, calibrated magnitude, stop expiry and control-loop cadence still
+need a hardware check. The service is active. No protected-branch merge was made.

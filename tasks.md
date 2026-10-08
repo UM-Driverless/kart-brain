@@ -46,8 +46,10 @@ the archive whole, only once its last step closes.
   20 Hz capture and period-based estimates with expiry. Brain `95f1144` and firmware
   `c11423b` are pushed and pulled onto the Orin; all three affected ROS packages and
   the bench firmware build there, and 32 Hall tests pass there. Activation and live
-  rate/rolling/stop checks await steering-motor isolation confirmation. No restart
-  or flash was performed; the VM SSH timeout remains.
+  rate/rolling/stop checks were pending. After Manual confirmation, firmware was
+  flashed and the service restarted: Hall telemetry measured 19.998 Hz, steering
+  feedback about 100 Hz, and the dashboard receives capture data. Physical rolling,
+  calibrated speed and stop expiry remain unverified; the VM SSH timeout remains.
 
 - [ ] **Reconcile stale environment pointers.** README lists the dashboard LAN port
   as 9090, but hardware launch files use 80. `.agents/README.md` lists old SSH/VM
