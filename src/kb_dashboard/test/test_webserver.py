@@ -207,7 +207,7 @@ class TestWebSocket:
         finally:
             s.close()
 
-    def test_telemetry_refresh_exceeds_twenty_updates_per_second(self, srv):
+    def test_telemetry_refresh_exceeds_forty_updates_per_second(self, srv):
         s = _blocking_ws_connect(srv.port)
         try:
             times = []
@@ -215,7 +215,7 @@ class TestWebSocket:
                 data = json.loads(_ws_read_frame(s))
                 if "speed_source" in data:
                     times.append(time.monotonic())
-            assert times[-1] - times[0] < 0.95
+            assert times[-1] - times[0] < 0.475
         finally:
             s.close()
 

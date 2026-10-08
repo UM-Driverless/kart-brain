@@ -21,7 +21,7 @@ HTML_PATH = Path(__file__).parent / "index.html"
 # Same directory as the page itself: both ship as package_data, so they land wherever the
 # installed package does and neither needs to know the workspace layout.
 ICON_DIR = Path(__file__).parent
-TELEMETRY_REFRESH_HZ = 30
+TELEMETRY_REFRESH_HZ = 60
 HUD_FRAME_INTERVAL_S = 0.3
 
 # Shell command that powers the Orin down. Named here rather than inlined so tests can
