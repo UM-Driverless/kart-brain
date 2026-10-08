@@ -323,3 +323,75 @@ def test_bench_enable_waits_for_verified_startup_zero():
     s=bench_ready();s.set_bench_mode(False,0);s.bench_initialized=False
     assert not s.set_bench_mode(True,0)
     assert "verified zero" in s.bench_notice
+
+
+def bench_emergency(mission="autonomous"):
+    s=bench_ready()
+    s.set_bench_mode(False,0)
+    s.logic.mission=mission
+    s.bench_config['max_speed']=0
+    s.note_command('auto',(0,0),0)
+    s.on_safety([1,4,192,18,0,s.mission_id],0)
+    s.tick(0)
+    return s
+
+
+def test_explicit_bench_request_prepares_auto_without_clearing_emergency():
+    s=bench_emergency('manual')
+    assert not s.set_bench_mode(True,0)
+    assert s.mission=='autonomous' and s.state==AS_EMERGENCY
+    assert not s.bench_mode_enabled and not s._arm_requested
+    assert 'Reset Safety' in s.bench_notice
+    assert not s.reset_inputs_healthy(0) # Firmware must acknowledge mission8 first.
+    s.on_safety([1,4,192,18,0,8],0)
+    assert s.reset_inputs_healthy(0)
+
+
+def test_bench_reset_ack_retains_pressure_off_and_requires_new_enable_start():
+    s=bench_emergency()
+    s.on_state_cmd('reset',0)
+    token=s.pending_reset
+    assert token==1 and s.state==AS_EMERGENCY
+    s.on_safety([1,4,0,17,token,8],.1)
+    assert s.state==AS_OFF and s.pending_reset is None
+    assert s._reset_hold and not s.bench_mode_enabled
+    assert s.mux((1,0),(0,0),.1)==(0,0)
+    assert s.on_state_cmd('start',.1)[0] is None
+    assert s.status[1]==4
+    assert s.set_bench_mode(True,.1)
+    assert not s._reset_hold and s.state==AS_OFF
+    s.tick(.1); assert s.state==AS_READY
+    s.bench_config['max_speed']=.9
+    s.note_command('auto',(.9,0),.1)
+    s.on_state_cmd('start',.1)
+    assert s.state==AS_DRIVING and s.mux((.9,0),(0,0),.1)==(.9,0)
+
+
+@pytest.mark.parametrize('failure', ['capability','identity','mission','mode','config','speed',
+    'nonzero','command','stale_command','status','controller','other_fault','armed','startup'])
+def test_bench_reset_refuses_unsafe_inputs_and_never_queues_rejected_attempt(failure):
+    s=bench_emergency()
+    if failure=='capability': s.bench_throttle=False
+    elif failure=='identity': s.status=(1,4,192,2,0,8)
+    elif failure=='mission': s.logic.mission='manual';s.status=(1,4,192,18,0,0)
+    elif failure=='mode': s.controller_mode=0
+    elif failure=='config': s.bench_config['steering']='geometric'
+    elif failure=='speed': s.bench_config['speed']='constant_speed'
+    elif failure=='nonzero': s.bench_config['max_speed']=.1
+    elif failure=='command': s.note_command('auto',(.1,0),0)
+    elif failure=='stale_command': s.command_times['auto']=-1
+    elif failure=='status': s.status_time=-1
+    elif failure=='controller': s.controller_reason='Perception missing'
+    elif failure=='other_fault': s.status=(1,6,192,18,0,8)
+    elif failure=='armed': s.status=(1,4,192,26,0,8)
+    elif failure=='startup': s.bench_initialized=False
+    s.on_state_cmd('reset',0)
+    assert s.pending_reset is None and s.state==AS_EMERGENCY
+    assert not s.set_bench_mode(True,0) and not s.bench_mode_enabled
+
+
+def test_zero_setting_allowed_in_bench_emergency_but_nonzero_rejected():
+    s=bench_emergency();s.bench_config['max_speed']=.9
+    assert not s.validate_bench_throttle(0,0)
+    assert s.validate_bench_throttle(18,0)
+    assert s.state==AS_EMERGENCY

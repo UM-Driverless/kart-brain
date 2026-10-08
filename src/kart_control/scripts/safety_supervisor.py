@@ -40,6 +40,7 @@ class SafetySupervisor:
         self.status_time = None
         self.command_times = {"auto": None, "manual": None}
         self.command_valid = {"auto": False, "manual": False}
+        self.auto_command_zero = False
         self.controller_mode = None
         self.controller_mode_time = None
         self.controller_time = None
@@ -131,6 +132,26 @@ class SafetySupervisor:
             return "Applying throttle setting"
         return ""
 
+    def bench_reset_inputs(self, now):
+        """Bench recovery never grants propulsion or hides the pressure fault."""
+        return (self.bench_available(now) and self.bench_initialized
+                and not self.bench_pending and not self.status[1] & ~4
+                and not self.status[3] & 8 and self.bench_config_fresh(now)
+                and self.bench_config["max_speed"] == 0
+                and self.bench_config["steering"] == "none"
+                and self.bench_config["speed"] in (
+                    "constant_throttle", "constant_throttle_blind", "constant_throttle_stop")
+                and self.controller_mode == 1 and self.controller_mode_time is not None
+                and 0 <= now - self.controller_mode_time <= STATUS_TIMEOUT
+                and self.controller_time is not None and not self.controller_reason
+                and 0 <= now - self.controller_time <= STATUS_TIMEOUT
+                and self.command_fresh("auto", now) and self.auto_command_zero)
+
+    def reset_inputs_healthy(self, now):
+        return (self.fresh_status(now) and self.controller_ready(now)
+                and (self.status[1] == 0 or (
+                    self.mission == "autonomous" and self.bench_reset_inputs(now))))
+
     def set_bench_mode(self, enabled, now):
         if type(enabled) is not bool:
             self.bench_notice = "Bench enable must be a boolean"
@@ -142,12 +163,19 @@ class SafetySupervisor:
                 self.logic.state = AS_OFF
             self.bench_notice = "No-air bench mode OFF; propulsion inhibited"
             return True
+        if self.state == AS_EMERGENCY and self.bench_reset_inputs(now):
+            # Explicit bench request may prepare its exact mission, never clear EBS.
+            self.logic.mission = "autonomous"
+            self.bench_mode_enabled = self._arm_requested = False
+            self.bench_notice = "Press Reset Safety, then enable Tank Bypass; propulsion remains OFF"
+            return False
         reason = ("Stop before enabling bench mode" if self.state not in (AS_OFF, AS_READY)
                   else self.bench_eligibility(now))
         if reason:
             self.bench_notice = reason
             return False
         self.bench_mode_enabled = True
+        self._reset_hold = False  # Explicit enable is the deliberate bench rearm.
         self._arm_requested = True
         self.bench_notice = ""
         return True
@@ -157,6 +185,8 @@ class SafetySupervisor:
             return "Throttle must be a finite number from 0 to 30%"
         if not self.bench_initialized and percent != 0:
             return "Waiting for verified zero throttle at startup"
+        if percent == 0 and self.state == AS_EMERGENCY and self.bench_available(now):
+            return "Applying throttle setting" if self.bench_pending else ""
         if self.state not in (AS_OFF, AS_READY):
             return "Stop before changing throttle"
         if not self.bench_available(now) or not self.bench_config_fresh(now):
@@ -211,6 +241,8 @@ class SafetySupervisor:
     def note_command(self, kind, command, now):
         self.command_times[kind] = now
         self.command_valid[kind] = all(math.isfinite(v) for v in command)
+        if kind == "auto":
+            self.auto_command_zero = self.command_valid[kind] and all(v == 0 for v in command)
 
     def on_safety(self, payload, now):
         valid = (len(payload) == 6 and all(isinstance(v, int) for v in payload)
@@ -226,10 +258,11 @@ class SafetySupervisor:
         self.status_time = now
         self._notice = ""
         if (self.pending_reset is not None and payload[4] == self.pending_reset
-                and payload[1] == 0 and payload[2] == 0
+                and self.reset_inputs_healthy(now) and payload[2] == 0
                 and payload[5] == self.mission_id
                 and now - self.reset_time <= RESET_TIMEOUT):
             self.logic.state = AS_OFF
+            self.bench_mode_enabled = False
             self._reset_hold = True
             self.pending_reset = None
             self._arm_requested = False
@@ -289,7 +322,7 @@ class SafetySupervisor:
         self.tick(now)
         if cmd == "reset" and self.state in (AS_EMERGENCY, AS_FINISHED):
             if self.pending_reset is None:
-                if self.fresh_status(now) and self.status[1] == 0 and self.controller_ready(now):
+                if self.reset_inputs_healthy(now):
                     token = max(self._last_reset_attempt, self.status[4]) + 1
                     if token > 2147483647:
                         self._notice = "Reset token exhausted; firmware restart required"

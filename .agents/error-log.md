@@ -794,3 +794,10 @@ state exactly what cannot be observed remotely, the measurement needed, and whic
 hypotheses its outcomes distinguish. A zero command at the Orin is evidence about
 that boundary only, not proof of zero throttle at the motor controller. Do not
 present an investigation checkpoint or recovery of tooling as task completion.
+
+
+## 2026-10-08 — Bench startup zero deadlocked behind retained emergency
+
+**What happened:** A ROS-only restart from armed bench READY correctly latched the firmware's state-stale/emergency faults. The new startup-zero timer accepted only AS_OFF, so it never replaced the controller's default 52.5% setpoint in AS_EMERGENCY. Actual outgoing commands stayed zero and bypass remained OFF, but the user saw the slider jump back to the real unaccepted default. The installed firmware also could not acknowledge Reset while raw tank-low persisted.
+
+**Prevention added:** Run verified startup zero in OFF and EMERGENCY without changing emergency state, with a failing-then-passing callback regression. Test the full paired no-air reset lifecycle through firmware acknowledgement, explicit enable and literal Start, including restart-default Manual, zero/freshness requirements and preservation of raw pressure fault. Keep requested slider drafts separate from authoritative applied readback and show rejection reasons.
