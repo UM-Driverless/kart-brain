@@ -2237,3 +2237,23 @@ A five-second ROS capture on orin-remote observed 453 throttle frames with paylo
 The fresh v1 netlist /tmp/throttle-v1-net.xml and the U14 footprint in repos/other/dv-hardware-v1/projects/kart-medulla/kart-medulla.kicad_pcb identify MAX4660EUA+T. Pin 4 is on +5V_REG; pins 3, 7 and exposed pad 9 are on GND. The authoritative v1 association is dv-hardware tag kart-medulla-v1, revision 84d6dd0, per project records. The manufacturer datasheet specifies +9 to +40 V single-supply operation and requires the exposed paddle to connect to V+ or remain unconnected. Both design connections therefore conflict with its requirements. Source: https://www.analog.com/MAX4660/datasheet (Rev 1, pages 1 and 6). The ground pad has no B.Paste layer in the PCB file, so actual solder contact cannot be inferred.
 
 The undervoltage was already an open blocker in dv-hardware/projects/kart-medulla/tasks.md. That file records a downstream mechanical panel switch selecting pedal versus medulla output and a v2 decision to delete U14. No completed U14 repair on the assembled v1 board was established. These are confirmed design defects and a strong hardware hypothesis, not yet a measured cause of this kart's symptom. Confirmation requires the assembled U14 identity/presence, supply and selector levels, and selected-output voltage while moving the pedal with propulsion isolated. Requested these measurements from the operator. No firmware was flashed or kart service restarted. Manufacturer PDF download through curl failed with HTTP/2 error 92; the web tool successfully read the official PDF, and its URL is preserved here.
+
+## 2026-10-08 — Public dashboard and remote SSH share an offline Cloudflare tunnel
+
+Read-only checks at 19:55 Europe/Madrid found both
+`https://kart.rubenayla.xyz` and `https://orin.rubenayla.xyz` resolving to
+Cloudflare anycast addresses and returning HTTP 530 with Cloudflare error 1033.
+Cloudflare documents 1033 as the edge finding no healthy `cloudflared`
+connector for the configured tunnel. The identical response on the dashboard
+and SSH hostnames places the observed failure before either origin service, so
+it does not establish whether the dashboard process itself is healthy.
+
+The Mac was on `10.7.20.135/24` through gateway `10.7.20.1`. The historical
+Orin address `10.7.20.142` did not accept TCP connections on ports 22, 80 or
+9090 during this check; its recorded SSH host key matches the kart access-point
+address `10.42.0.1`, which also timed out. A bounded subnet check found port 22
+only on the Mac and `10.7.20.20`; the latter presented a different host and was
+not treated as the Orin. `10.7.20.129` refused ports 22, 80 and 9090. No service,
+tunnel, network setting, firmware or actuator state was changed. Recovery and
+origin checks remain deferred until the operator finishes the wiring work and
+authorizes hardware access.
