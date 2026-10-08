@@ -529,8 +529,8 @@ function updateMissionUI() {
   // Safety status and reset remain available in every mission.
   document.querySelectorAll('[data-st="running"]').forEach(button => {
     button.disabled = !isAuto;
-    button.textContent = 'Start autonomous';
-    button.title = isAuto ? 'Start the selected autonomous mission' : 'Under Mission, select Auto or an autonomous event to use Start autonomous';
+    button.textContent = 'Start';
+    button.title = isAuto ? 'Start the selected autonomous mission' : 'Under Mission, select Auto or an autonomous event to use Start';
   });
   updateAlgoButtons();
 }
@@ -2839,15 +2839,15 @@ body{
         </div>
         <div class="rc-panel rc-mpanel" id="rcCtrlPane">
           <span class="rc-label">Controls / safety</span>
-          <button class="rc-i" type="button" aria-label="Explain Start autonomous and Remote control"
+          <button class="rc-i" type="button" aria-label="Explain Start and Remote control"
                   aria-controls="rcControlInfo" aria-expanded="false" onclick="rcPop('rcControlInfo')">i</button>
           <div class="rc-pop" id="rcControlInfo" role="note" onclick="rcPop('rcControlInfo')">
-            Under <b>Mission</b>, select Auto or an autonomous event before using <b>Start autonomous</b>.
+            Under <b>Mission</b>, select Auto or an autonomous event before using <b>Start</b>.
             Remote is a separate Mission mode and does not use this button: select Remote, then hold and drag its control pad.
             Releasing the pad sends zero steering and throttle.
           </div>
           <div id="safetyReason" class="safety-reason" role="status" aria-live="polite">Waiting for safety status</div>
-          <div class="ctrl-row"><button class="ctrl-btn go" data-st="running" onclick="wsSend({action:'set_state',state:'running'})">Start autonomous</button><button class="ctrl-btn stop" data-st="idle" onclick="wsSend({action:'set_state',state:AUTONOMOUS_MISSIONS.has(currentMission)?'idle':'ebs'})">Stop</button><button class="ctrl-btn" onclick="wsSend({action:'set_state',state:'reset'})">Reset safety</button><button class="ctrl-btn restart" onclick="rcConfirm('Restart kart-brain', 'The ROS stack restarts and telemetry stops for a few seconds. The Orin itself stays up.', { okText: 'Restart' }).then(ok =&gt; { if (ok) wsSend({ action: 'restart' }); })">Restart</button></div>
+          <div class="ctrl-row"><button class="ctrl-btn go" data-st="running" onclick="wsSend({action:'set_state',state:'running'})">Start</button><button class="ctrl-btn stop" data-st="idle" onclick="wsSend({action:'set_state',state:AUTONOMOUS_MISSIONS.has(currentMission)?'idle':'ebs'})">Stop</button><button class="ctrl-btn" onclick="wsSend({action:'set_state',state:'reset'})">Reset safety</button><button class="ctrl-btn restart" onclick="rcConfirm('Restart kart-brain', 'The ROS stack restarts and telemetry stops for a few seconds. The Orin itself stays up.', { okText: 'Restart' }).then(ok =&gt; { if (ok) wsSend({ action: 'restart' }); })">Restart</button></div>
         </div>
         <div class="rc-panel rc-mpanel rc-joypane" id="rcJoyPane" style="display:none">
           <span class="rc-label">Remote control</span>
