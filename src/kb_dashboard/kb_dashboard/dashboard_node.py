@@ -199,6 +199,8 @@ class DashboardNode(Node):
             String, "/kart/state", self._on_kart_state, qos_reliable
         )
 
+        self.create_subscription(Frame, "/orin/mision", self._on_mission_feedback, qos_reliable)
+        self.create_subscription(String, "/kart/controller_config", self._on_controller_config, qos_reliable)
         self.create_subscription(String, "/kart/bench_status", self._on_bench_status, qos_reliable)
         self._bench_mode_pub = self.create_publisher(String, "/dashboard/bench_mode", 10)
         self._bench_throttle_pub = self.create_publisher(String, "/dashboard/bench_throttle", 10)
@@ -249,6 +251,18 @@ class DashboardNode(Node):
         self._selftest_timer = self.create_timer(2.0, self._selftest)
 
         self.get_logger().info(f"Dashboard node started, web UI on port {self.port}")
+
+    def _on_mission_feedback(self, msg):
+        try:
+            self.state.update_mission(list(msg.payload))
+        except (ValueError, TypeError):
+            self.get_logger().warn("Invalid mission feedback")
+
+    def _on_controller_config(self, msg):
+        try:
+            self.state.update_controller_config(json.loads(msg.data))
+        except (ValueError, TypeError):
+            self.get_logger().warn("Invalid controller feedback")
 
     def _on_bench_status(self, msg):
         try:

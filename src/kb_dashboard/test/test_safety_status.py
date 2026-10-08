@@ -40,3 +40,24 @@ def test_bench_websocket_input_validation():
         with pytest.raises(ValueError):validate_bench_action(dict(action='set_bench_throttle',percent=value))
     assert validate_bench_action(dict(action='set_bench_mode',enabled=False)) is False
     assert validate_bench_action(dict(action='set_bench_throttle',percent=20))==20
+
+
+def test_actual_mission_and_controller_feedback_replace_ui_defaults():
+    state=DashboardState()
+    state.update_mission([8])
+    state.update_controller_config(dict(steering='none',speed='constant_throttle_blind',max_speed=0))
+    snapshot=state.snapshot()
+    assert snapshot['mission']=='autonomous'
+    assert snapshot['controller_type']=='none'
+    assert snapshot['speed_controller_type']=='constant_throttle_blind'
+
+
+def test_invalid_mission_and_controller_feedback_preserve_last_actual():
+    import pytest
+    state=DashboardState();state.update_mission([8])
+    for payload in ([],[True],[99],[8,0],['8']):
+        with pytest.raises(ValueError): state.update_mission(payload)
+    for config in (None,{},dict(steering='none',speed='constant_throttle_blind',max_speed=True),
+                   dict(steering='none',speed='constant_throttle_blind',max_speed=float('nan'))):
+        with pytest.raises(ValueError):state.update_controller_config(config)
+    assert state.snapshot()['mission']=='autonomous'

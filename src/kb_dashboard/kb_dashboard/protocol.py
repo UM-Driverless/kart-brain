@@ -716,6 +716,20 @@ class DashboardState:
         self._bench_time = None
         self._hall = None
 
+    def update_mission(self, payload):
+        if len(payload) != 1 or type(payload[0]) is not int or payload[0] not in MISSIONS.values():
+            raise ValueError("Malformed mission feedback")
+        self.update("mission", next(name for name, value in MISSIONS.items() if value == payload[0]))
+
+    def update_controller_config(self, config):
+        if (type(config) is not dict or not isinstance(config.get("steering"), str)
+                or not isinstance(config.get("speed"), str)
+                or type(config.get("max_speed")) not in (int, float)
+                or not math.isfinite(config["max_speed"]) or config["max_speed"] < 0):
+            raise ValueError("Malformed controller feedback")
+        self.update("controller_type", config["steering"])
+        self.update("speed_controller_type", config["speed"])
+
     def update_bench_status(self, status):
         fields = ("bench_mode_available", "bench_mode_enabled", "bench_mode_reason",
                   "bench_throttle_cap_percent", "bench_throttle_percent", "bench_pressure_fault")
