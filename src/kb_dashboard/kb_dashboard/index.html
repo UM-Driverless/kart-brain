@@ -178,6 +178,10 @@ body {
       </div>
     </div>
     <div class="conn-dot" id="connDot"></div>
+    <button id="benchModeBtn" type="button" onclick="toggleBenchMode()"
+            title="Tank-pressure bypass unavailable until paired bench firmware and runtime are ready">
+      <span>TANK BYPASS</span><small>UNAVAILABLE</small>
+    </button>
     <button class="h-ctrl global-ebs" data-st="ebs" onclick="wsSend({action:'set_state',state: this.classList.contains('on') ? 'idle' : 'ebs'})" title="Trigger Emergency Brake System">EBS</button>
     <button id="powerOffBtn"
             onclick="requestPowerOff()"
@@ -337,12 +341,14 @@ let currentMission = 'manual'; // Track mission state locally to show/hide widge
 // Demo mode (?demo=1): no backend, so mission/state changes are simulated locally.
 const DEMO = new URLSearchParams(location.search).has('demo');
 let demoMission = 'manual', demoState = 'idle', demoCompDisabled = false;
+let demoBenchEnabled = false, demoBenchThrottle = 0;
 // Demo stand-in for the gains the ESP32 reports back. Starts on the firmware
 // defaults, which is what a freshly booted kart reports.
 let demoPid = { override: false, kp: 1.5, ki: 0, kd: 0.03, limit: 0.5 };
 let currentControllerType = 'geometric';
 let currentSpeedControllerType = 'curve_factor';
 let currentTargetSpeed = 0.28; // m/s (1 km/h), setpoint for the constant_speed loop
+let benchStatusAt = 0;
 let currentSvoFile = 'live';
 const AUTONOMOUS_MISSIONS = new Set([
   'acceleration','skidpad','autocross','trackdrive',
@@ -535,7 +541,76 @@ function updateAlgoButtons() {
   const show = currentSpeedControllerType === 'constant_speed'
     && AUTONOMOUS_MISSIONS.has(currentMission);
   if (row) row.style.display = show ? 'block' : 'none';
+  const throttleRow = $('benchThrottleRow');
+  const throttleMode = currentSpeedControllerType === 'constant_throttle'
+    || currentSpeedControllerType === 'constant_throttle_blind'
+    || currentSpeedControllerType === 'constant_throttle_stop';
+  if (throttleRow) throttleRow.style.display = throttleMode
+    && AUTONOMOUS_MISSIONS.has(currentMission) ? 'block' : 'none';
+  updateBenchControls(lastData);
 }
+
+function benchStatusFresh() {
+  return performance.now() - benchStatusAt < 500;
+}
+
+function updateBenchControls(d) {
+  const btn = $('benchModeBtn');
+  const range = $('benchThrottleRange');
+  const input = $('benchThrottleInput');
+  const applied = $('benchThrottleApplied');
+  if (!btn || !range || !input || !applied) return;
+
+  const fresh = !!d && benchStatusFresh();
+  const available = fresh && d.bench_mode_available === true;
+  const enabled = available && d.bench_mode_enabled === true;
+  const running = d && (d.state === 'running' || d.as_state === 'AS_DRIVING');
+  const reason = fresh && d.bench_mode_reason ? String(d.bench_mode_reason)
+    : (fresh ? 'Paired bench firmware and runtime are not available' : 'Bench status is stale');
+  const cap = available && Number.isFinite(Number(d.bench_throttle_cap_percent))
+    ? Number(d.bench_throttle_cap_percent) : 0;
+  const actual = available && Number.isFinite(Number(d.bench_throttle_percent))
+    ? Number(d.bench_throttle_percent) : null;
+
+  btn.classList.toggle('on', enabled);
+  btn.classList.toggle('unavailable', !available);
+  btn.disabled = !available || (!enabled && running);
+  btn.innerHTML = `<span>TANK BYPASS</span><small>${available ? (enabled ? 'ON · STEERING OFF · '+cap+'% CAP' : 'OFF') : 'UNAVAILABLE'}</small>`;
+  btn.title = available
+    ? (enabled ? `Tank pressure bypass ON; steering disabled; throttle capped at ${cap}%. This button does not Start the kart.`
+               : (running ? 'Stop the kart before enabling the tank-pressure bypass'
+                          : `${reason}. Enable tank-pressure bypass; Start remains separate`))
+    : `Tank-pressure bypass unavailable: ${reason}`;
+
+  range.max = input.max = String(cap);
+  range.disabled = input.disabled = !available || running;
+  if (actual === null) {
+    applied.textContent = available ? 'Applied --' : reason;
+  } else {
+    applied.textContent = `Applied ${actual.toFixed(1)}% · ${cap.toFixed(0)}% ceiling${enabled ? '' : ' · '+reason}`;
+    if (document.activeElement !== range) range.value = String(actual);
+    if (document.activeElement !== input) input.value = actual.toFixed(1);
+  }
+}
+
+function toggleBenchMode() {
+  if (!lastData || !benchStatusFresh() || !lastData.bench_mode_available) return;
+  wsSend({action:'set_bench_mode', enabled: !lastData.bench_mode_enabled});
+}
+
+function setBenchThrottle(raw) {
+  if (!lastData || !benchStatusFresh() || !lastData.bench_mode_available) return;
+  const cap = Number(lastData.bench_throttle_cap_percent);
+  let percent = Number(raw);
+  if (!Number.isFinite(percent) || !Number.isFinite(cap)) return;
+  percent = Math.max(0, Math.min(cap, percent));
+  $('benchThrottleRange').value = String(percent);
+  $('benchThrottleInput').value = percent.toFixed(1);
+  wsSend({action:'set_bench_throttle', percent});
+}
+// The backend repeats authoritative bench status at 10 Hz. A frozen ON button would be unsafe
+// after a dropped socket, so expire it locally rather than leaving the last received state painted.
+setInterval(() => updateBenchControls(lastData), 250);
 // The kart is commanded in m/s; the box asks for km/h because that is what a
 // speed reads as to the person standing next to it.
 function onTargetSpeedChange(inp) {
@@ -851,6 +926,7 @@ function connect() {
         // Left alone while it has focus, so a value being typed is not overwritten.
         if (inp && document.activeElement !== inp) inp.value = (currentTargetSpeed * 3.6).toFixed(1);
       }
+      if ('bench_mode_available' in lastData) benchStatusAt = performance.now();
       if (lastData.svo_file) { currentSvoFile = lastData.svo_file; document.querySelectorAll('.svo-dropdown').forEach(sel => sel.value = currentSvoFile); }
       if (lastData.steer_pid_error) { showPidError(lastData.steer_pid_error); return; }
       // Reflect ESP32 heartbeat in the connection dot (green only when HB alive)
@@ -861,6 +937,7 @@ function connect() {
       try { updateHealth(lastData); } catch {}
       try { updateControllerStatus(lastData); } catch {}
       try { updatePidReadback(lastData); } catch {}
+      try { updateBenchControls(lastData); } catch {}
     } catch {}
   };
 }
@@ -902,6 +979,8 @@ function wsSend(obj) {
       demoCompDisabled = obj.disabled;
       if (obj.disabled) demoState = 'ebs';   // mirrors what the server does
     }
+    else if (obj.action === 'set_bench_mode') demoBenchEnabled = !!obj.enabled;
+    else if (obj.action === 'set_bench_throttle') demoBenchThrottle = Math.max(0, Math.min(30, Number(obj.percent) || 0));
     else if (obj.action === 'set_steer_pid') {
       // Stand in for the firmware, clamps included, so the demo shows the case that
       // matters: type 99 into Kp and watch "In force" come back 20. A demo that
@@ -1904,6 +1983,14 @@ body{
   font-weight:700; font-family:'Titillium Web',sans-serif; text-shadow:none; }
 .conn-dot{ background:var(--rc-label-dim); }
 .conn-dot.ok{ background:var(--rc-red); box-shadow:0 0 8px var(--rc-red-glow); animation:rcPulse 1.4s ease-in-out infinite; }
+#benchModeBtn{ width:126px; height:38px; padding:3px 8px; border:1px solid var(--rc-red);
+  background:#2a090d; color:#ff6b76; cursor:pointer; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:1px; font-family:'Titillium Web',sans-serif;
+  font-size:var(--fs-xs); font-weight:700; letter-spacing:.12em; line-height:1; white-space:nowrap; }
+#benchModeBtn small{ font:700 8px/1.1 'Titillium Web',sans-serif; letter-spacing:.06em; }
+#benchModeBtn.on{ background:var(--rc-red); color:#fff; box-shadow:0 0 12px var(--rc-red-glow); }
+#benchModeBtn.unavailable{ border-color:var(--rc-line-hard); background:var(--rc-raised); color:var(--rc-label-dim); }
+#benchModeBtn:disabled{ cursor:not-allowed; opacity:.72; }
 @keyframes rcPulse{ 0%,100%{opacity:1;} 50%{opacity:.25;} }
 /* Danger — a gauge in its RED (act-now) zone pulses. Reserve for real danger (battery <15%,
    tank out of range), never amber and never the pedals' brake-red.
@@ -2080,6 +2167,13 @@ body{
 .rc-mission{ display:grid; grid-auto-flow:column; grid-template-columns:126px; grid-auto-columns:1fr; gap:var(--sp-3); height:100%; min-height:0; }
 .rc-mispanel{ overflow:hidden; }   /* the wheel scrolls itself; the pane must not */
 .rc-mpanel{ padding:var(--sp-3) var(--sp-4); display:flex; flex-direction:column; gap:var(--sp-3); min-height:0; overflow-y:auto; }
+.bench-throttle-inputs{ display:grid; grid-template-columns:minmax(90px,1fr) 58px; gap:var(--sp-2); align-items:center; }
+.bench-throttle-inputs input[type=range]{ width:100%; accent-color:var(--rc-red); }
+.bench-throttle-inputs input[type=number]{ width:100%; min-width:0; padding:7px 5px; border:1px solid var(--rc-line-hard);
+  background:#09090a; color:var(--rc-white); font:600 var(--fs-sm)/1 'Share Tech Mono',monospace; text-align:right; }
+.bench-throttle-inputs input:disabled{ opacity:.45; cursor:not-allowed; }
+.bench-throttle-applied{ min-height:1.2em; margin-top:var(--sp-1); color:var(--rc-label);
+  font:600 var(--fs-xs)/1.2 'Titillium Web',sans-serif; letter-spacing:.05em; }
 /* the driving pad gets its own pane on the right — never scrollable (was cramped inside Status).
    position:relative so the PID panel can cover exactly this pane and nothing else. */
 /* overflow-y:auto, not hidden: on a short viewport the pad's 150px floor plus the readouts
@@ -2619,6 +2713,15 @@ body{
   clip-path:polygon(0 0, calc(100% - var(--cut-sm)) 0, 100% var(--cut-sm), 100% 100%, var(--cut-sm) 100%, 0 calc(100% - var(--cut-sm))); }
 #netInfoBtn:active{ background:var(--rc-red-dark) !important; }
 #powerOffBtn svg{ width:18px; height:18px; filter:drop-shadow(0 0 4px rgba(226,0,26,.5)); }
+@media (max-width:900px){
+  #topbarStatus{ gap:2px; margin-left:6px; }
+  #topbarStatus .spill{ padding:4px; font-size:8px; letter-spacing:.05em; }
+  #benchModeBtn{ width:108px; }
+  #benchModeBtn small{ font-size:7px; }
+  #topbar > div:last-of-type{ gap:5px !important; }
+  .global-ebs{ margin-right:3px; }
+  #powerOffBtn{ margin-left:6px; }
+}
 `,
   render() { return `
 <div class="race-rotate">
@@ -2709,6 +2812,16 @@ body{
           <!-- Setpoint for the closed loop only; every other speed mode ignores it,
                so the row appears with that mode and nowhere else. -->
           <div class="algo-select" id="targetSpeedRow" style="display:none"><div class="algo-label">Target speed (km/h)</div><input class="algo-dropdown" id="targetSpeedInput" type="number" step="0.5" min="0" value="1" onchange="onTargetSpeedChange(this)"></div>
+          <div class="algo-select bench-throttle" id="benchThrottleRow" style="display:none">
+            <div class="algo-label">Throttle (%)</div>
+            <div class="bench-throttle-inputs">
+              <input id="benchThrottleRange" type="range" min="0" max="0" step="0.5" value="0"
+                     oninput="benchThrottleInput.value=this.value" onchange="setBenchThrottle(this.value)">
+              <input id="benchThrottleInput" type="number" min="0" max="0" step="0.5" value="0"
+                     inputmode="decimal" onchange="setBenchThrottle(this.value)">
+            </div>
+            <div id="benchThrottleApplied" class="bench-throttle-applied">Bench status is stale</div>
+          </div>
         </div>
         <div class="rc-panel rc-mpanel" id="rcCtrlPane">
           <span class="rc-label">Controls / safety</span>
@@ -3544,15 +3657,20 @@ if (new URLSearchParams(location.search).has('demo')) {
       pid_kd: demoPid.kd, pid_pwm_limit: demoPid.limit,
       mission: demoMission, state: demoState, safety_reason: demoState === 'ebs' ? 'Emergency stop latched — reset safety before starting' : '',
       as_state: demoState === 'running' ? 'AS_DRIVING' : (demoState === 'ebs' ? 'AS_EMERGENCY_BRAKE' : 'AS_READY'),
+      bench_mode_available: true, bench_mode_enabled: demoBenchEnabled,
+      bench_mode_reason: demoBenchEnabled ? 'Tank-pressure bypass active' : 'Ready while stopped',
+      bench_throttle_cap_percent: 30, bench_throttle_percent: demoBenchThrottle,
     };
     // mirror the WebSocket handler: on a mission change, re-run the show/hide UI
     if (d.mission !== currentMission) { currentMission = d.mission; updateJoystickWidget(); updateMissionUI(); }
     // Also mirror its lastData assignment. Controls that read the current state back
     // before acting (the compressor toggle) are dead in demo mode without this.
     lastData = d;
+    benchStatusAt = performance.now();
     try { skinRace.update(d); } catch (e) {}
     try { updateHealth(d); } catch (e) {}
     try { updatePidReadback(d); } catch (e) {}
+    try { updateBenchControls(d); } catch (e) {}
   }, 100);
   dbgLog('DEMO MODE — simulated telemetry');
 }
