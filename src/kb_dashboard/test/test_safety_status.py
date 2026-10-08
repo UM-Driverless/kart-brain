@@ -61,3 +61,21 @@ def test_invalid_mission_and_controller_feedback_preserve_last_actual():
                    dict(steering='none',speed='constant_throttle_blind',max_speed=float('nan'))):
         with pytest.raises(ValueError):state.update_controller_config(config)
     assert state.snapshot()['mission']=='autonomous'
+
+
+def test_bench_active_requires_explicit_current_feedback(monkeypatch):
+    import pytest
+    clock = [10.0]
+    monkeypatch.setattr('kb_dashboard.protocol.time.monotonic', lambda: clock[0])
+    state = DashboardState()
+    status = dict(bench_mode_available=True, bench_mode_enabled=True, bench_mode_reason='ON',
+                  bench_throttle_cap_percent=30, bench_throttle_percent=0, bench_pressure_fault=True)
+    state.update_bench_status(status)
+    assert not state.snapshot()['bench_mode_active']
+    status['bench_mode_active'] = True
+    state.update_bench_status(status)
+    assert state.snapshot()['bench_mode_active']
+    status['bench_mode_active'] = 1
+    with pytest.raises(ValueError): state.update_bench_status(status)
+    clock[0] += .51
+    assert not state.snapshot()['bench_mode_active']

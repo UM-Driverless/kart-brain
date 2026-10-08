@@ -203,10 +203,17 @@ class SafetySupervisor:
 
     def bench_snapshot(self, now):
         available = self.bench_available(now)
+        active = self.bench_throttle_authorized(now)
+        reason = self.bench_notice or self.bench_eligibility(now) or (
+            "No-air bench mode ON" if self.bench_mode_enabled else "No-air bench mode OFF")
+        if self.bench_mode_enabled and not active:
+            reason = "Tank bypass requested but inactive: " + (
+                "select Autonomous and steering None" if self.mission != "autonomous"
+                else self.bench_eligibility(now) or "drive permission unavailable")
         return dict(bench_mode_available=available,
                     bench_mode_enabled=self.bench_mode_enabled and available,
-                    bench_mode_reason=self.bench_notice or self.bench_eligibility(now) or
-                        ("No-air bench mode ON" if self.bench_mode_enabled else "No-air bench mode OFF"),
+                    bench_mode_active=active,
+                    bench_mode_reason=reason,
                     bench_throttle_cap_percent=30 if available else None,
                     bench_throttle_percent=self.bench_percent(now) if available else None,
                     bench_pressure_fault=bool(self.status[1] & 4) if available else None)
@@ -384,7 +391,10 @@ class SafetySupervisor:
         if self._notice:
             return self._notice
         if self.state == AS_EMERGENCY and self._trip_reason:
-            return self._trip_reason + "; repair the fault, then press Reset"
+            prefix = ""
+            if self.bench_mode_enabled and not self.bench_throttle_authorized(now):
+                prefix = self.bench_snapshot(now)["bench_mode_reason"] + "; "
+            return prefix + self._trip_reason + "; repair the fault, then press Reset"
         if not self.fresh_status(now):
             return "Waiting for fresh firmware safety status for this mission"
         if self.bench_throttle_authorized(now) and self.ready(now):

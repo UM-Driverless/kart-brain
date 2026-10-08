@@ -395,3 +395,28 @@ def test_zero_setting_allowed_in_bench_emergency_but_nonzero_rejected():
     assert not s.validate_bench_throttle(0,0)
     assert s.validate_bench_throttle(18,0)
     assert s.state==AS_EMERGENCY
+
+
+def test_bypass_request_is_not_effective_in_remote_or_emergency():
+    s = bench_ready()
+    assert s.bench_snapshot(0)["bench_mode_active"]
+    s.logic.mission = "remote_control"
+    s.on_safety([1, 4, 132, 18, 0, 7], 0)
+    snapshot = s.bench_snapshot(0)
+    assert snapshot["bench_mode_enabled"]
+    assert not snapshot["bench_mode_active"]
+    assert snapshot["bench_pressure_fault"]
+    assert "requested but inactive" in snapshot["bench_mode_reason"]
+    assert "select Autonomous" in snapshot["bench_mode_reason"]
+    assert s.blocking_faults(0) == 4
+    assert not s.bench_snapshot(1)["bench_mode_active"]
+
+
+def test_active_pressure_override_keeps_raw_fault_visible():
+    s = bench_ready()
+    snapshot = s.bench_snapshot(0)
+    assert snapshot["bench_mode_enabled"] and snapshot["bench_mode_active"]
+    assert snapshot["bench_pressure_fault"] and s.status[1] == 4
+    assert "bench override active" in s.reason(0)
+    s.set_bench_mode(False, 0)
+    assert not s.bench_snapshot(0)["bench_mode_active"]

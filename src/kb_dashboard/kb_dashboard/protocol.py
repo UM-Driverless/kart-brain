@@ -692,6 +692,7 @@ class DashboardState:
             "safety_reason": "Waiting for safety status",
             "bench_mode_available": False,
             "bench_mode_enabled": False,
+            "bench_mode_active": False,
             "bench_mode_reason": "Waiting for bench status",
             "bench_throttle_cap_percent": None,
             "bench_throttle_percent": None,
@@ -744,8 +745,13 @@ class DashboardState:
             value = status[key]
             if value is not None and (type(value) not in (int, float) or not math.isfinite(value) or value < 0):
                 raise ValueError("Malformed bench throttle status")
+        # Older publishers cannot establish that a requested bypass is effective.
+        active = status.get("bench_mode_active", False)
+        if type(active) is not bool or (active and not status["bench_mode_enabled"]):
+            raise ValueError("Malformed bench active status")
         with self.lock:
             self.data.update({key: status[key] for key in fields})
+            self.data["bench_mode_active"] = active
             self._bench_time = time.monotonic()
 
     def configure_hall_speed(self, edges_per_metre=0.0, enabled=True):
@@ -785,7 +791,7 @@ class DashboardState:
         with self.lock:
             d = dict(self.data)
             if self._bench_time is None or time.monotonic() - self._bench_time > 0.5:
-                d.update(bench_mode_available=False, bench_mode_enabled=False,
+                d.update(bench_mode_available=False, bench_mode_enabled=False, bench_mode_active=False,
                          bench_mode_reason="Bench status missing or stale",
                          bench_throttle_cap_percent=None, bench_throttle_percent=None,
                          bench_pressure_fault=None)
