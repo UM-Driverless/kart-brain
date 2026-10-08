@@ -257,7 +257,7 @@ class SafetySupervisor:
         if not self.fresh_status(now):
             return "Waiting for fresh firmware safety status for this mission"
         if self.bench_throttle_authorized(now) and self.ready(now):
-            return "BENCH THROTTLE: 5% cap; steering disabled; " + (
+            return "BENCH THROTTLE: 30% electrical cap; steering disabled; " + (
                 "tank pressure too low (bench override active)"
                 if self.status[1] & 4 else "elevated wheels only")
         faults = self.status[1] | self.status[2]

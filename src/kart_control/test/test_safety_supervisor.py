@@ -210,7 +210,7 @@ def test_bench_throttle_needs_literal_start_and_preserves_tank_notice():
     s=bench_ready()
     assert s.state == AS_READY
     assert s.mux((.25,0),(0,0),0) == (0,0)
-    assert "BENCH THROTTLE" in s.reason(0)
+    assert "BENCH THROTTLE: 30% electrical cap" in s.reason(0)
     assert "tank pressure too low" in s.reason(0)
     assert s.on_state_cmd("start",0)[0] == AS_DRIVING
     assert s.mux((.25,0),(0,0),0) == (.25,0)
@@ -249,7 +249,7 @@ def test_bench_throttle_timeouts_and_emergency_stop(failure):
 def test_bench_identity_visible_even_with_healthy_pressure():
     s=bench_ready(faults=0)
     assert s.ready(0)
-    assert "BENCH THROTTLE" in s.reason(0)
+    assert "BENCH THROTTLE: 30% electrical cap" in s.reason(0)
     assert "elevated wheels only" in s.reason(0)
 
 
