@@ -26,7 +26,7 @@ from rcl_interfaces.srv import GetParameters, SetParameters
 from rclpy.parameter import Parameter
 from kb_interfaces.msg import Frame
 
-from state_logic import STATE_NAMES, AS_OFF
+from state_logic import STATE_NAMES, AS_OFF, AS_EMERGENCY
 from safety_supervisor import SafetySupervisor
 
 
@@ -127,7 +127,8 @@ class StateMachineNode(Node):
             return
         self._logic.bench_pending = True
         self._logic._arm_requested = False
-        self._logic.logic.state = AS_OFF
+        if self._logic.state != AS_EMERGENCY:
+            self._logic.logic.state = AS_OFF
         self._bench_request_time = time.monotonic()
         req = SetParameters.Request()
         req.parameters = [Parameter("max_speed", value=float(speed)).to_parameter_msg()]
@@ -163,7 +164,7 @@ class StateMachineNode(Node):
                 except Exception:
                     self._logic.bridge_scale = None
             self._bridge_params.call_async(req).add_done_callback(done)
-        if not self._bench_zeroed and not self._logic.bench_pending and self._logic.state == 0:
+        if not self._bench_zeroed and not self._logic.bench_pending and self._logic.state in (AS_OFF, AS_EMERGENCY):
             self._apply_bench_speed(0.0)
 
     def _on_mission(self, msg: String):

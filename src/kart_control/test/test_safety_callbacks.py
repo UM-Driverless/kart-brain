@@ -90,7 +90,7 @@ def test_bench_parameter_update_never_reports_requested_percent_as_readback():
         def to_parameter_msg(self):return self
     future=SimpleNamespace(add_done_callback=lambda cb:calls.append(cb))
     node=callbacks('state_machine_node.py','StateMachineNode',{'_apply_bench_speed'}, {
-        'AS_OFF':0,'Parameter':Parameter,'SetParameters':SimpleNamespace(Request=SimpleNamespace),
+        'AS_OFF':0,'AS_EMERGENCY':4,'Parameter':Parameter,'SetParameters':SimpleNamespace(Request=SimpleNamespace),
         'time':SimpleNamespace(monotonic=lambda:1)})
     node._logic=s
     node._controller_params=SimpleNamespace(service_is_ready=lambda:True,call_async=lambda req:future)
@@ -123,3 +123,31 @@ def test_bench_ros_input_validation_and_scale():
     assert applied==[2.0]
     s.logic.state=2;node._on_bench_throttle(SimpleNamespace(data='22'))
     assert applied==[2.0]
+
+
+@pytest.mark.parametrize('state', [0, 4])
+def test_startup_zero_runs_while_emergency_without_clearing_it(state):
+    import sys
+    sys.path.insert(0, str(SCRIPTS))
+    from safety_supervisor import SafetySupervisor
+    s = SafetySupervisor(bench_throttle=True)
+    s.logic.state = state
+    s.bench_config = dict(steering='geometric', speed='curve_factor', max_speed=2.625)
+    class Parameter:
+        def __init__(self, name, value): self.name=name; self.value=value
+        def to_parameter_msg(self): return self
+    requests=[]; callbacks_done=[]
+    client=SimpleNamespace(service_is_ready=lambda: True,
+        call_async=lambda req: (requests.append(req) or SimpleNamespace(add_done_callback=callbacks_done.append)))
+    node=callbacks('state_machine_node.py', 'StateMachineNode', {'_bench_poll', '_apply_bench_speed'}, {
+        'AS_OFF':0, 'AS_EMERGENCY':4, 'Parameter':Parameter,
+        'SetParameters':SimpleNamespace(Request=SimpleNamespace),
+        'time':SimpleNamespace(monotonic=lambda:1), 'math':math})
+    node._logic=s; node._bench_zeroed=False; node._controller_params=client
+    node._bridge_params=SimpleNamespace(service_is_ready=lambda:False)
+    node._bench_poll()
+    assert len(requests)==1 and requests[0].parameters[0].value==0
+    assert s.state==state and s.bench_pending
+    callbacks_done[0](SimpleNamespace(result=lambda:SimpleNamespace(results=[SimpleNamespace(successful=True)])))
+    assert s.state==state and not s._arm_requested
+    assert s.bench_config['max_speed']==2.625  # Await actual controller heartbeat.
