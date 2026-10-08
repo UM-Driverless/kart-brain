@@ -349,6 +349,7 @@ let currentControllerType = 'geometric';
 let currentSpeedControllerType = 'curve_factor';
 let currentTargetSpeed = 0.28; // m/s (1 km/h), setpoint for the constant_speed loop
 let benchStatusAt = 0;
+let benchThrottleDraft = null;
 let currentSvoFile = 'live';
 const AUTONOMOUS_MISSIONS = new Set([
   'acceleration','skidpad','autocross','trackdrive',
@@ -572,6 +573,13 @@ function updateBenchControls(d) {
   const actual = available && Number.isFinite(Number(d.bench_throttle_percent))
     ? Number(d.bench_throttle_percent) : null;
 
+  if (benchThrottleDraft) {
+    const accepted = actual !== null && Math.abs(actual - benchThrottleDraft.percent) < 0.05;
+    const rejected = reason !== benchThrottleDraft.reason;
+    const timedOut = performance.now() - benchThrottleDraft.sentAt > 2500;
+    if (accepted || rejected || timedOut) benchThrottleDraft = null;
+  }
+
   btn.classList.toggle('on', enabled);
   btn.classList.toggle('unavailable', !available);
   btn.disabled = !available || (!enabled && running);
@@ -587,9 +595,10 @@ function updateBenchControls(d) {
   if (actual === null) {
     applied.textContent = available ? 'Applied --' : reason;
   } else {
-    applied.textContent = `Applied ${actual.toFixed(1)}% · ${cap.toFixed(0)}% ceiling${enabled ? '' : ' · '+reason}`;
-    if (document.activeElement !== range) range.value = String(actual);
-    if (document.activeElement !== input) input.value = actual.toFixed(1);
+    const pending = benchThrottleDraft ? `Requested ${benchThrottleDraft.percent.toFixed(1)}% · ` : '';
+    applied.textContent = `${pending}Applied ${actual.toFixed(1)}% · ${cap.toFixed(0)}% ceiling${enabled ? '' : ' · '+reason}`;
+    if (!benchThrottleDraft && document.activeElement !== range) range.value = String(actual);
+    if (!benchThrottleDraft && document.activeElement !== input) input.value = actual.toFixed(1);
   }
 }
 
@@ -606,6 +615,7 @@ function setBenchThrottle(raw) {
   percent = Math.max(0, Math.min(cap, percent));
   $('benchThrottleRange').value = String(percent);
   $('benchThrottleInput').value = percent.toFixed(1);
+  benchThrottleDraft = {percent, reason: String(lastData.bench_mode_reason || ''), sentAt: performance.now()};
   wsSend({action:'set_bench_throttle', percent});
 }
 // The backend repeats authoritative bench status at 10 Hz. A frozen ON button would be unsafe
