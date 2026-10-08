@@ -810,3 +810,8 @@ The first fix for a Mission wheel jumping back to Manual vetoed selection during
 ## 2026-10-08 — Blocked dashboard buttons gave no tap feedback (GPT-6.1 Sol)
 
 Start in Manual/Remote and unavailable Tank Bypass used native disabled controls with tooltip-only explanations. On a phone they looked inert. Disconnected commands and ignored safety requests could also disappear without button-level feedback. Replace native disabling for actionable explanations with guarded taps, red button feedback and a visible reason. Keep sending, acceptance and actual state confirmation distinct. The dashboard frame now owns this rule.
+
+
+## 2026-10-08 — Solid red rejection looked active (GPT-6.1 Sol)
+
+The first rejection treatment filled buttons solid red, matching active dashboard controls. Rubén identified the ambiguity. Error feedback now pulses three times before settling to a dark background with a red outline, while the message persists. Check error and active states side by side rather than treating red alone as sufficient.

@@ -1039,7 +1039,10 @@ function actionFeedback(message, rejected = false, button = actionButton) {
     document.body.appendChild(feedback);
   }
   document.querySelectorAll('.action-rejected').forEach(el => el.classList.remove('action-rejected'));
-  if (rejected && button) button.classList.add('action-rejected');
+  if (rejected && button) {
+    void button.offsetWidth; // Restart the pulse when the same action is rejected again.
+    button.classList.add('action-rejected');
+  }
   feedback.classList.toggle('rejected', rejected);
   feedback.textContent = message;
   feedback.hidden = false;
@@ -2155,7 +2158,9 @@ body{
   border:1px solid #777; border-left:3px solid #aaa; background:#171719; color:#eee; font-size:var(--fs-sm); line-height:1.4; box-shadow:0 5px 24px #0008; }
 #actionFeedback[hidden]{ display:none; }
 #actionFeedback.rejected{ border-color:#ff3048; background:#310c13; color:#ffb8bf; }
-button.action-rejected{ background:#970e20 !important; border-color:#ff3048 !important; color:#fff !important; opacity:1 !important; box-shadow:0 0 12px #e2001a88 !important; }
+button.action-rejected{ background:#241014 !important; border-color:#ff3048 !important; color:#ffb8bf !important; opacity:1 !important; box-shadow:0 0 4px #e2001a44 !important; animation:actionRejectedPulse .7s ease-in-out 3; }
+@keyframes actionRejectedPulse{ 0%,100%{ filter:brightness(1); } 50%{ filter:brightness(3); } }
+@media(prefers-reduced-motion:reduce){ button.action-rejected{ animation:none; border-style:dashed; } }
 #benchModeFeedback{ color:var(--rc-amber); font-size:var(--fs-sm); line-height:1.35; overflow-wrap:anywhere; }
 @media(max-width:900px){
   #topbarTitle{ gap:6px; font-size:12px; }

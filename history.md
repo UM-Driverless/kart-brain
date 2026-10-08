@@ -2514,3 +2514,10 @@ need a hardware check. The service is active. No protected-branch merge was made
 Validation: 248 dashboard Python tests and 14 JavaScript tests passed. The six initial button-feedback regressions failed against the previous wsSend implementation; the five new server socket cases also failed before the server fix. Review added coverage ensuring Stop and EBS remain sendable without fresh telemetry and delayed errors preserve an unrelated pending request. Browser checks at 1280×800 and 844×390 showed a blocked Start tap lighting the button red with a persistent readable explanation.
 
 Deployment: c698162 built successfully on Orin and 843d17c supplied the specific bypass-refusal reason through the verified source symlink. kart-brain restarted with the serial-reset prehook suppressed by a temporary override, which was removed after restart. The public dashboard accepted a tap on guarded Start in Manual: the button was red and the visible message explained that Start requires Auto or an autonomous event. The observed state remained IDLE / AS_OFF, with the existing no-air propulsion inhibit displayed. No Start command, bypass, reset, joystick input or mission change was sent during this live check. Final JavaScript coverage is 15 passing tests; the dashboard Python suite is 248 passing tests. Global rule commit cd5fbbe is pushed in ai-dotfiles. UTM deployment remains blocked by the previously verified SSH timeout.
+
+
+## 2026-10-08 — Distinguish rejected buttons from active controls
+
+Rubén found that a solid red rejected button looked activated. Rejected actions now pulse brightness three times over 2.1 seconds, then retain a dark background, red outline and readable reason. Repeated taps restart the pulse. Reduced-motion users get a static dashed outline. The dashboard frame and shared visibility rule reflect this distinction.
+
+Verification: 15 JavaScript action/mission tests passed. Browser computed style confirmed actionRejectedPulse, 0.7-second duration and three iterations with motion enabled. The reduced-motion rendering showed the static dashed error outline.
