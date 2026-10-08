@@ -93,3 +93,82 @@ def test_invalid_packet_cannot_inflate_next_rate():
 def test_invalid_calibration_rejected(value):
     with pytest.raises(ValueError):
         HallSpeed(value)
+
+
+def test_slow_period_is_held_across_empty_publication_windows():
+    hall = HallSpeed(NOMINAL_HALL_EDGES_PER_METRE)
+    for i in range(5):
+        result = hall.ingest(sample([1, 1, 1], hall_age_ms=i * 50,
+                                    hall_interval_us=231000), 10 + i * .05)
+        assert result["hall_speed_mps"] * 3.6 == pytest.approx(.1, rel=.001)
+
+
+def test_period_does_not_depend_on_message_arrival_time():
+    hall = HallSpeed(100)
+    hall.ingest(sample([1, 1, 1], hall_age_ms=0, hall_interval_us=10000), 0)
+    result = hall.ingest(sample([10, 10, 10], hall_age_ms=0,
+                                hall_interval_us=10000), .073)
+    assert result["hall_speed_mps"] == 1
+
+
+def test_period_expires_and_restart_needs_two_new_edges():
+    hall = HallSpeed(100)
+    hall.ingest(sample([1, 1, 1], hall_age_ms=0, hall_interval_us=231000), 0)
+    result = hall.ingest(sample([1, 1, 1], hall_age_ms=700,
+                                hall_interval_us=231000), .7)
+    assert result["hall_speed_mps"] is None
+    assert result["hall_status"] == "no_edges"
+    # First new edge spans the stopped interval and cannot measure moving speed.
+    first = hall.ingest(sample([2, 1, 1], hall_age_ms=0,
+                              hall_interval_us=1000000), 1)
+    assert first["hall_speed_mps"] is None
+    second = hall.ingest(sample([2, 2, 1], hall_age_ms=0,
+                               hall_interval_us=231000), 1.231)
+    assert second["hall_speed_mps"] == pytest.approx(1 / (100 * .231))
+
+
+def test_fast_packets_allow_individual_channels_to_wait_at_low_speed():
+    hall = HallSpeed(100)
+    edges = [1, 1, 1]
+    for i in range(19):
+        if i and i % 4 == 0:
+            edges[(i // 4) % 3] += 1
+        result = hall.ingest(sample(list(edges), hall_age_ms=(i % 4) * 50,
+                                   hall_interval_us=200000), i * .05)
+        assert result['hall_status'] == 'moving'
+        assert result['hall_speed_mps'] == .05
+
+
+def test_dead_channel_is_detected_over_multiple_publications():
+    hall = HallSpeed(100)
+    for i in range(23):
+        result = hall.ingest(sample([i, i, 0], hall_age_ms=0,
+                                   hall_interval_us=10000), i * .05)
+    assert result['hall_status'] == 'ambiguous'
+    assert result['hall_speed_mps'] is None
+
+
+def test_period_reset_and_bad_capture_cannot_reuse_old_interval():
+    hall = HallSpeed(100)
+    hall.ingest(sample([100, 100, 100], hall_age_ms=0, hall_interval_us=10000), 0)
+    assert hall.ingest(sample([0, 0, 0], hall_age_ms=0,
+                              hall_interval_us=10000), .05)['hall_status'] == 'counter_reset'
+    assert hall.ingest(sample([0, 0, 0], hall_age_ms=50,
+                              hall_interval_us=10000), .1)['hall_speed_mps'] is None
+    assert hall.ingest(sample([1, 1, 0], hall_age_ms=0,
+                              hall_interval_us=10000), .15)['hall_speed_mps'] == 1
+
+
+def test_snapshot_expires_period_before_telemetry_goes_stale():
+    hall = HallSpeed(100)
+    hall.ingest(sample([1, 1, 1], hall_age_ms=0, hall_interval_us=10000), 0)
+    assert hall.snapshot(.1)['hall_speed_mps'] == 1
+    assert hall.snapshot(.151)['hall_status'] == 'no_edges'
+    assert hall.snapshot(3)['hall_status'] == 'stale'
+
+
+def test_period_unsigned_wrap_is_not_reset():
+    hall = HallSpeed(100)
+    hall.ingest(sample([0xffffffff] * 3, hall_age_ms=0, hall_interval_us=10000), 0)
+    assert hall.ingest(sample([0] * 3, hall_age_ms=0,
+                              hall_interval_us=10000), .05)['hall_speed_mps'] == 1

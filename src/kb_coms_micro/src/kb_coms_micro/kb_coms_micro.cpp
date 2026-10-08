@@ -44,6 +44,7 @@ KB_coms_micro::KB_coms_micro() : Node("kb_coms_micro_node") {
     esp_fps_pub_ = create_publisher<std_msgs::msg::Float32>("/esp32/fps", 10);
 
     esp_safety_pub_ = create_publisher<kb_interfaces::msg::Frame>("/esp32/safety", 10);
+    esp_hall_pub_ = create_publisher<kb_interfaces::msg::Frame>("/esp32/hall", 10);
     orin_safety_reset_sub_ = create_subscription<kb_interfaces::msg::Frame>(
         "/orin/safety_reset", 10, std::bind(&KB_coms_micro::kb_coms_TXcallback, this, std::placeholders::_1));
 
@@ -297,6 +298,17 @@ void KB_coms_micro::kb_coms_RXcallback(const SerialDriver::Frame &frame_esp) {
         status.type = frame_esp.type;
         status.payload = frame_esp.payload;
         esp_safety_pub_->publish(status);
+        break;
+    }
+
+    case kb_interfaces::msg::Frame::ESP_HALL_STATUS: {
+        // 20 Hz raw Hall snapshot: [init_err, bits, edges_h1, edges_h2,
+        // edges_h3, age_ms, interval_us, multi_changes]. Preserve the complete
+        // payload so consumers can calculate speed from firmware edge timing.
+        kb_interfaces::msg::Frame hall_msg;
+        hall_msg.type = frame_esp.type;
+        hall_msg.payload = frame_esp.payload;
+        esp_hall_pub_->publish(hall_msg);
         break;
     }
 

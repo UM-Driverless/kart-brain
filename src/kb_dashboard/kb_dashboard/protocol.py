@@ -248,6 +248,18 @@ def decode_health_data(payload) -> dict:
     return out
 
 
+def decode_hall(payload) -> dict:
+    """Decode the dedicated eight-word Hall capture frame, preserving validity."""
+    if len(payload) != 8:
+        return {"hall_init_err": None, "hall_bits": None, "hall_edges": None}
+    return {
+        "hall_init_err": payload[0], "hall_bits": payload[1],
+        "hall_edges": [v & 0xFFFFFFFF for v in payload[2:5]],
+        "hall_age_ms": payload[5], "hall_interval_us": payload[6],
+        "hall_multi_changes": payload[7] & 0xFFFFFFFF,
+    }
+
+
 def decode_health(payload) -> dict:
     """@brief Decode health payload to dict.
 
@@ -757,13 +769,22 @@ class DashboardState:
     def configure_hall_speed(self, edges_per_metre=0.0, enabled=True):
         """Select the display's speed source; zero scale means uncalibrated."""
         tracker = HallSpeed(edges_per_metre) if enabled else None
+        if tracker is not None:
+            tracker.captured_timing = False
         with self.lock:
             self._hall = tracker
+            self._hall_dedicated = False
             self.data["speed_source"] = "motor_halls" if enabled else "legacy"
 
-    def hall_sample(self, sample, now=None):
+    def hall_sample(self, sample, now=None, dedicated=False):
         with self.lock:
             if self._hall is not None:
+                if dedicated:
+                    self._hall_dedicated = True
+                    self._hall.stale_s = 0.25
+                    self._hall.captured_timing = True
+                elif self._hall_dedicated:
+                    return  # Slow health packets cannot overwrite fast capture or hide its loss.
                 self._hall.ingest(sample, time.monotonic() if now is None else now)
 
     def update(self, key, value):

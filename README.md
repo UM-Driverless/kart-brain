@@ -31,19 +31,27 @@ Requires [cloudflared](https://developers.cloudflare.com/cloudflare-one/connecti
 
 Default password: `0` (set via the `password` ROS param on `kb_dashboard`).
 
-The hardware speed dial uses the three motor Hall counters from Medulla's extended
-health frame. The [Hall-speed explanation and calibration procedure](https://um-driverless.github.io/kart-docs/assembly/electronics/kart-medulla/firmware/#motor-hall-speed)
-covers the complete signal path and limitations. Set `hall_edges_per_metre` in `src/kb_dashboard/config/hall_speed.yaml`
-to a measured value: sum the increase in all three counters over a known rolling
-distance, then divide by metres travelled. Keep the drivetrain engaged, move in
-one direction, and check that all three channels count without multiple-bit changes.
-Rebuild `kb_dashboard` and restart the dashboard after changing this installed config.
-The default `0.0` means uncalibrated, not zero speed. System → Motor Halls shows the
-raw states, counters, rate and calibration. Missing/stale signals show `--` on the
-dial; no transitions cannot distinguish a stopped motor from a disconnected sensor.
-Speed is an unsigned, roughly one-second average using telemetry arrival times,
-not direction or control feedback. All three channels must advance in an interval;
-very slow movement can therefore show no speed. Simulation retains its existing source.
+The hardware speed dial uses timestamped motor Hall transitions from Medulla's
+20 Hz `/esp32/hall` stream. Speed is distance per transition divided by the latest
+captured transition interval, independent of message arrival times. Between
+transitions the estimate is held; after three missed intervals (bounded between
+150 ms and 1 s), speed becomes unavailable. Silence cannot distinguish a stopped
+motor from disconnected sensors, so the dial shows `--` rather than a confirmed zero.
+Missing fast telemetry becomes stale after 250 ms. Once the fast stream is received,
+slow health packets cannot overwrite it or hide its loss.
+
+The nominal scale uses the named drivetrain constants in
+`src/kb_dashboard/kb_dashboard/hall_speed.py`; the motor pulse count and loaded wheel
+circumference still need physical validation. Override `hall_edges_per_metre` in
+`src/kb_dashboard/config/hall_speed.yaml` with measured combined edges per rolled
+metre, or set it explicitly to `0.0` to mark the speed uncalibrated. Keep the drivetrain
+engaged, move in one direction, and check that all three channels count without
+multiple-bit changes. Rebuild `kb_dashboard` and restart after changing its installed
+config. System → Motor Halls shows raw states, counters, rate and calibration.
+
+Extended 1 Hz health packets retain their counter-delta calculation for older
+firmware until the dedicated stream arrives. Speed is unsigned and diagnostic;
+simulation retains its existing source.
 
 To make the LAN path reliable, give the Orin a **static DHCP reservation** on your router (or set a static IP via NetworkManager on the Orin) so the URL doesn't change between sessions.
 

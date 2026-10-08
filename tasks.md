@@ -42,7 +42,9 @@ the archive whole, only once its last step closes.
   dashboard now reports motor_halls and 155.85108242642295 edges/metre (2026-10-08).
   VM deployment is still blocked by SSH timeout to utm (192.168.64.3).
   Rubén confirmed wheel movement produces dashboard speed. Hall samples still arrive
-  at 1 Hz from firmware health_task; increase their source rate for smoother speed.
+  at 1 Hz from firmware health_task. The 2026-10-08 implementation adds dedicated
+  20 Hz capture and period-based estimates with expiry; local tests pass. Build and
+  safe firmware activation plus live rate/rolling/stop checks remain pending.
 
 - [ ] **Reconcile stale environment pointers.** README lists the dashboard LAN port
   as 9090, but hardware launch files use 80. `.agents/README.md` lists old SSH/VM

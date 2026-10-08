@@ -2453,3 +2453,29 @@ The dashboard keeps acknowledgment-based mission selection and removes the emerg
 Validation: all 330 kart_control tests passed with one ROS-dependent skip; the new regression subset produced 14 failures against the old implementation. All 233 dashboard Python tests and four JavaScript selection tests passed. Browser demo verification selected Auto and Remote during emergency, retained the warning and showed the appropriate mission controls. Layout was inspected at 1280×800 and 844×390 without horizontal overflow; all six dashboard pages were exercised. Independent combined-diff review found no concrete blocker. No bypass, reset or motion command was used on the kart for this work.
 
 Deployment: commit `a753635` was pushed to dev, pulled onto the Orin and both kb_dashboard and kart_control built successfully (3.74 seconds). The service restart used a temporary override suppressing the serial-reset prehook; the override was removed afterward and default prehooks were restored. The public dashboard accepted Remote during AS_EMERGENCY and retained it through a later authenticated WebSocket snapshot: mission remote_control, state ebs, AS_EMERGENCY, outgoing throttle 0.0, bypass requested false and active false. The red emergency warning and matching header controls were verified on the live page. Manual was requested again after verification. No Reset, Start, bypass or joystick input was sent. UTM SSH timed out again; its deployment remains recorded in tasks.md.
+
+
+## 2026-10-08 — Period-based Hall speed and dedicated 20 Hz telemetry
+
+Implemented paired `ESP_HALL_STATUS` (0x10) routing to `/esp32/hall` with the existing
+eight Hall fields. The dashboard calculates unsigned speed from the firmware's
+latest transition interval, holds it across empty 50 ms windows, and expires it
+after three intervals bounded between 150 ms and 1 s. The display reports no data
+rather than claiming confirmed standstill. After expiry, two new transitions are
+required before reusing speed. Channel liveness is checked across multiple packets,
+not by requiring every channel to change in every 50 ms window. Counter reset,
+wrap, malformed capture and multiple-bit changes remain guarded. Dedicated telemetry
+is stale after 250 ms; slow health packets cannot overwrite a previously received
+fast stream. Old health packets retain the counter-delta compatibility path until the dedicated stream arrives.
+
+Firmware keeps 500 Hz steering control and reduces only outgoing steering feedback
+to 100 Hz so the new Hall stream fits the 115200-baud serial link. Safety, command
+and health rates are unchanged. Physical firmware activation requires confirmation
+of motor isolation and preservation of the currently installed bench-throttle image.
+
+Validation: the dashboard suite passed 242 tests before the final legacy-compatibility
+guard, and all 32 Hall unit/integration tests passed after that guard. A review
+verified a five-second nominal 0.1 km/h stream stays valid across every 50 ms packet.
+The bridge's actual RX callback passed a temporary compiled stub harness preserving
+signed fields and legacy health splitting. Firmware passed 80 native and five monitor
+tests; production S3, classic ESP32 and bench S3 builds linked successfully.

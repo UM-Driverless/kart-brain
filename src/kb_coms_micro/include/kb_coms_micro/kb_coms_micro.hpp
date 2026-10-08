@@ -38,6 +38,7 @@ class KB_coms_micro : public rclcpp::Node {
       ESP_STEER_PID           = 0x0D,
       ESP_PEDALS              = 0x0E,
       ESP_SAFETY_STATUS       = 0x0F,
+      ESP_HALL_STATUS         = 0x10,
 
       // ==========================
       // Orin --> ESP32 (0x20 - 0x3F)
@@ -97,6 +98,7 @@ class KB_coms_micro : public rclcpp::Node {
     rclcpp::Publisher<kb_interfaces::msg::Frame>::SharedPtr esp_pedals_pub_;
 
     rclcpp::Publisher<kb_interfaces::msg::Frame>::SharedPtr esp_safety_pub_;
+    rclcpp::Publisher<kb_interfaces::msg::Frame>::SharedPtr esp_hall_pub_;
 
     // Declaration of all subscribers
     rclcpp::Subscription<kb_interfaces::msg::Frame>::SharedPtr orin_throttle_sub_;

@@ -41,6 +41,7 @@ from kb_dashboard.protocol import (
     decode_pedals,
     decode_health_flags,
     decode_health_data,
+    decode_hall,
     decode_pneumatic,
     decode_steer_pid,
     encode_compressor_disable,
@@ -108,6 +109,7 @@ class DashboardNode(Node):
         self.create_subscription(
             Frame, "/esp32/health/flags", self._on_esp_health_flags, qos_reliable
         )
+        self.create_subscription(Frame, "/esp32/hall", self._on_esp_hall, qos_reliable)
         self.create_subscription(
             Frame, "/esp32/health/data", self._on_esp_health_data, qos_reliable
         )
@@ -389,6 +391,9 @@ class DashboardNode(Node):
         """@brief Callback for the flag-bits half of the ESP32 health frame."""
         for k, v in decode_health_flags(list(msg.payload)).items():
             self.state.update(k, v)
+
+    def _on_esp_hall(self, msg: Frame):
+        self.state.hall_sample(decode_hall(list(msg.payload)), dedicated=True)
 
     def _on_esp_health_data(self, msg: Frame):
         """@brief Callback for the numeric half of the ESP32 health frame."""

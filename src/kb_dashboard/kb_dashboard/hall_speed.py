@@ -44,6 +44,10 @@ class HallSpeed:
         self._last_time: float | None = None
         self._baseline_edges: tuple[int, int, int] | None = None
         self._last_result: dict[str, Any] | None = None
+        self._needed_edges = 0
+        self._channel_times = None
+        self.stale_s = _STALE_S
+        self.captured_timing = True
 
     def ingest(self, sample: dict[str, Any], now: float) -> dict[str, Any]:
         """Accept one telemetry sample and return the current derived snapshot."""
@@ -55,14 +59,17 @@ class HallSpeed:
             self._last = parsed
             self._last_result = result
             return result
-        stale_gap = self._last_time is not None and now - self._last_time > _STALE_S
+        stale_gap = self._last_time is not None and now - self._last_time > self.stale_s
         if stale_gap:
             self._invalidate()
 
         status = self._base_status(parsed)
         rate: float | None = None
         speed: float | None = None
-        if status is None:
+        if status is None and self.captured_timing and parsed.get("hall_interval_us") is not None and parsed.get("hall_age_ms") is not None:
+            status, rate, speed = self._period_sample(parsed, now, stale_gap)
+        elif status is None:
+            # Compatibility with telemetry that predates captured edge timing.
             edges = parsed["hall_edges"]
             if stale_gap:
                 self._baseline_edges = edges
@@ -116,10 +123,67 @@ class HallSpeed:
             return self._result({}, "no_data")
         if self._last_time is None or now < self._last_time:
             return self._result(self._last, "invalid")
-        if now - self._last_time > _STALE_S:
+        if now - self._last_time > self.stale_s:
             self._invalidate()
             return self._result(self._last, "stale")
-        return dict(self._last_result or self._result(self._last, "no_data"))
+        result = dict(self._last_result or self._result(self._last, "no_data"))
+        interval = self._last.get("hall_interval_us")
+        age = self._last.get("hall_age_ms")
+        if self.captured_timing and result["hall_status"] == "moving" and interval and age is not None:
+            if age / 1000 + now - self._last_time > self._expiry(interval):
+                self._needed_edges = 2
+                return self._result(self._last, "no_edges")
+        return result
+
+    @staticmethod
+    def _expiry(interval_us):
+        return min(1.0, max(0.15, 3 * interval_us / 1_000_000))
+
+    def _period_sample(self, parsed, now, stale_gap):
+        edges = parsed["hall_edges"]
+        previous = self._baseline_edges
+        self._baseline_edges = edges
+        if self._channel_times is None:
+            self._channel_times = [now] * 3
+        counts = (0, 0, 0) if previous is None else tuple(
+            self._delta(a, b) for a, b in zip(edges, previous))
+        if any(count is None for count in counts):
+            self._needed_edges = 2
+            self._channel_times = [now] * 3
+            return "counter_reset", None, None
+        for i, count in enumerate(counts):
+            if count:
+                self._channel_times[i] = now
+        if stale_gap or self._multi_changed(parsed):
+            self._needed_edges = 2
+            return ("stale" if stale_gap else "ambiguous"), None, None
+        interval = parsed["hall_interval_us"]
+        age = parsed["hall_age_ms"]
+        if age < 0 or interval <= 0:
+            self._needed_edges = max(self._needed_edges, 1)
+            return "warming_up", None, None
+        # If a publication was delayed across a stop, reject its first new edge.
+        if self._last is not None and self._last_time is not None and sum(counts):
+            old_age = self._last.get("hall_age_ms")
+            old_interval = self._last.get("hall_interval_us")
+            if old_age is not None and old_age >= 0 and old_interval and old_interval > 0:
+                elapsed_to_edge = old_age / 1000 + now - self._last_time - age / 1000
+                if elapsed_to_edge > self._expiry(old_interval) and sum(counts) == 1:
+                    self._needed_edges = 2
+        if age / 1000 > self._expiry(interval):
+            self._needed_edges = 2
+            return "no_edges", None, None
+        self._needed_edges = max(0, self._needed_edges - sum(counts))
+        if self._needed_edges:
+            return "warming_up", None, None
+        # A channel need not advance in every 50 ms packet at low speed.
+        channel_timeout = max(1.0, 6 * interval / 1_000_000)
+        if any(now - last > channel_timeout for last in self._channel_times):
+            return "ambiguous", None, None
+        rate = 1_000_000 / interval
+        if self.edges_per_metre == 0:
+            return "uncalibrated", rate, None
+        return "moving", rate, rate / self.edges_per_metre
 
     @staticmethod
     def _number(value: Any, name: str) -> float:
@@ -206,6 +270,8 @@ class HallSpeed:
     def _invalidate(self) -> None:
         self._baseline_edges = None
         self._last_result = None
+        self._channel_times = None
+        self._needed_edges = 2
 
     def _result(self, sample: dict[str, Any], status: str, rate: float | None = None, speed: float | None = None) -> dict[str, Any]:
         result = {key: sample.get(key) for key in ("hall_init_err", "hall_bits", "hall_edges", "hall_age_ms", "hall_interval_us", "hall_multi_changes")}
