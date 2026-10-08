@@ -914,6 +914,11 @@ function connect() {
   ws.onclose = (ev) => {
     if (typeof dbgLog==='function') dbgLog('WS CLOSE code='+ev.code+' reason='+ev.reason+' clean='+ev.wasClean);
     const d = $('connDot'); if (d) d.classList.remove('ok');
+    // Do not let a telemetry snapshot queued just before disconnect repaint live-looking
+    // values over the stale state below.
+    if (visualFrameId) cancelAnimationFrame(visualFrameId);
+    visualFrameId = 0;
+    pendingVisualData = null;
     if (!new URLSearchParams(location.search).has('demo'))
       renderSpeed({esp32_speed:null, speed_source:'motor_halls', hall_status:'stale'});
     // A socket that dies right after an accepted power-off IS the power-off completing —
@@ -960,13 +965,31 @@ function connect() {
       const d = $('connDot');
       if (d) { if (lastData.esp32_heartbeat) d.classList.add('ok'); else d.classList.remove('ok'); }
       lastTelemetryAt = performance.now();
-      try { skinRace.update(lastData); } catch {}
-      try { updateHealth(lastData); } catch {}
-      try { updateControllerStatus(lastData); } catch {}
-      try { updatePidReadback(lastData); } catch {}
-      try { updateBenchControls(lastData); } catch {}
+      scheduleDashboardPaint(lastData);
     } catch {}
   };
+}
+
+// Telemetry arrives independently of the browser's paint cycle (normally at 30 Hz). Keep
+// parsing every message immediately, but perform the visual work once in the next animation
+// frame. This prevents a burst of snapshots from redrawing every canvas several times before
+// the browser can show any of them, while always painting the newest complete snapshot.
+let pendingVisualData = null;
+let visualFrameId = 0;
+function scheduleDashboardPaint(d) {
+  pendingVisualData = d;
+  if (visualFrameId) return;
+  visualFrameId = requestAnimationFrame(() => {
+    visualFrameId = 0;
+    const latest = pendingVisualData;
+    pendingVisualData = null;
+    if (!latest) return;
+    try { skinRace.update(latest); } catch {}
+    try { updateHealth(latest); } catch {}
+    try { updateControllerStatus(latest); } catch {}
+    try { updatePidReadback(latest); } catch {}
+    try { updateBenchControls(latest); } catch {}
+  });
 }
 
 let myClientId = null;
@@ -3699,10 +3722,7 @@ if (new URLSearchParams(location.search).has('demo')) {
     // before acting (the compressor toggle) are dead in demo mode without this.
     lastData = d;
     benchStatusAt = performance.now();
-    try { skinRace.update(d); } catch (e) {}
-    try { updateHealth(d); } catch (e) {}
-    try { updatePidReadback(d); } catch (e) {}
-    try { updateBenchControls(d); } catch (e) {}
+    scheduleDashboardPaint(d);
   }, 100);
   dbgLog('DEMO MODE — simulated telemetry');
 }
