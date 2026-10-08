@@ -251,6 +251,8 @@ class TestWebSocket:
         _ws_send_text(s, json.dumps({"action": "set_mission", "mission": "autocross"}))
         time.sleep(0.3)
         assert "autocross" in srv.node.published_missions
+        assert srv.state.snapshot()["mission"] == "manual"
+        srv.state.update_mission([3])
         assert srv.state.snapshot()["mission"] == "autocross"
         s.close()
 

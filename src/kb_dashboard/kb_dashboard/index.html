@@ -1785,16 +1785,14 @@ const RC_DIAL_PIST = { min: 0, max: PNEU_MAX_BAR, major: 2, minor: 1, numbers: t
  * position measured in items, each element placed at its shortest signed distance from it, so
  * N nodes serve an infinite ring with no cloning.
  *
- * The one behavioural difference is deliberate. The rail commits on settle — whatever stops in
- * the centre becomes the page — which is right when the cost of a wrong turn is looking at the
- * wrong screen. Here the cost is putting the kart in a different mission, so settling only
- * moves the highlight and a second, separate tap commits. See rcWireMissionWheel.
+ * A tap or a completed drag requests the centred mission. The caller can reject a pick
+ * before the wheel animates, for example while an emergency is latched.
  *
  * @param o.rail    Element that captures the drag gesture.
  * @param o.win     The window element; its centre is where the selection sits.
  * @param o.items   Array of elements, one per entry, absolutely positioned by this function.
  * @param o.onPaint Optional (pos, sel) callback on every repaint.
- * @param o.onTap   Optional (index) callback for a tap that did not drag.
+ * @param o.onPick  Optional (index, wasCentred) callback; return false to veto the move.
  * @return { go, sel, pos } — go(i, animate) moves the ring; sel() is the centred index.
  */
 function rcMakeWheel(o) {
@@ -1864,11 +1862,9 @@ function rcMakeWheel(o) {
       const hit = items.findIndex(t => { const b = t.getBoundingClientRect(); return y >= b.top && y <= b.bottom; });
       if (hit >= 0) idx = hit;
     }
+    // A rejected mission must stay on the actual selection.
+    if (o.onPick && o.onPick(idx, tapped && idx === centred) === false) return;
     go(idx);
-    // Fires for a drag that settles as well as for a tap — the wheel selects whatever ends up
-    // in the centre slot, which is how the page rail beside it behaves. wasCentred says which
-    // it was, for callers that care.
-    if (o.onPick) o.onPick(idx, tapped && idx === centred);
   };
   o.rail.addEventListener('pointerup', end);
   o.rail.addEventListener('pointercancel', end);
@@ -2876,6 +2872,7 @@ body{
             Remote is a separate Mission mode and does not use this button: select Remote, then hold and drag its control pad.
             Releasing the pad sends zero steering and throttle.
           </div>
+          <div id="missionSelectionStatus" class="safety-reason" role="status" aria-live="polite"></div>
           <div id="safetyReason" class="safety-reason" role="status" aria-live="polite">Waiting for safety status</div>
           <div class="ctrl-row"><button class="ctrl-btn go" data-st="running" onclick="wsSend({action:'set_state',state:'running'})">Start</button><button class="ctrl-btn stop" data-st="idle" onclick="wsSend({action:'set_state',state:AUTONOMOUS_MISSIONS.has(currentMission)?'idle':'ebs'})">Stop</button><button class="ctrl-btn" onclick="wsSend({action:'set_state',state:'reset'})">Reset safety</button><button class="ctrl-btn restart" onclick="rcConfirm('Restart kart-brain', 'The ROS stack restarts and telemetry stops for a few seconds. The Orin itself stays up.', { okText: 'Restart' }).then(ok =&gt; { if (ok) wsSend({ action: 'restart' }); })">Restart</button></div>
         </div>
@@ -3174,12 +3171,22 @@ body{
     const misTabs = [...document.querySelectorAll('.mis-tab')];
     const misNames = misTabs.map(t => t.dataset.m);
     let misCurrent = null;     // mission the kart reports; null until the first frame
+    let misPending = null, misRequestedAt = 0;
+    const misStatus = text => { $('missionSelectionStatus').textContent = text; };
     const misRefresh = () => misTabs.forEach(t => t.classList.toggle('cur', t.dataset.m === misCurrent));
     const misWheel = rcMakeWheel({
       rail: $('misWheel'), win: $('misWheelWin'), items: misTabs,
       onPick: idx => {
         const m = misNames[idx];
-        if (m === misCurrent) return;   // already there; nothing to send
+        if (m === misCurrent && !misPending) return;
+        if (lastData.state === 'ebs') {
+          misStatus('Mission unchanged: emergency latched. Resolve the safety fault, then use Reset safety.');
+          misWheel.go(Math.max(0, misNames.indexOf(misCurrent)), false);
+          return false;
+        }
+        misPending = m;
+        misRequestedAt = performance.now();
+        misStatus('Waiting for the kart to confirm ' + misTabs[idx].textContent + '…');
         wsSend({ action: 'set_mission', mission: m });
         if (m === 'inspection') wsSend({ action: 'list_svo' });
       },
@@ -3189,7 +3196,24 @@ body{
     // phone, or by the Orin itself. A tap has already animated the wheel there, so this is
     // normally a no-op; it is what keeps the two in step when the change came from elsewhere.
     window.rcSetCurrentMission = m => {
-      if (!m || m === misCurrent) return;
+      if (!m) return;
+      if (!misPending && lastData.state !== 'ebs' && $('missionSelectionStatus').textContent.startsWith('Mission unchanged:')) misStatus('');
+      if (misPending) {
+        if (m === misPending) {
+          misPending = null;
+          misStatus('');
+        } else if (performance.now() - misRequestedAt < 2000) {
+          // Old feedback can arrive while the command is still in transit.
+          misCurrent = m;
+          misRefresh();
+          return;
+        } else {
+          misPending = null;
+          misStatus('Mission change was not confirmed. Current mission: ' + m.replaceAll('_', ' ') + '.');
+          misCurrent = null;  // re-seat the wheel even if the actual mission did not change
+        }
+      }
+      if (m === misCurrent) return;
       const first = misCurrent === null;
       misCurrent = m;
       const i = misNames.indexOf(m);

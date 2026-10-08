@@ -418,7 +418,7 @@ async def run_websocket_server(
         if action == "set_mission":
             mission = cmd.get("mission", "manual")
             if mission in MISSIONS:
-                state.update("mission", mission)
+                # Only state-machine feedback confirms a mission change.
                 node.publish_mission(mission)
                 # Release control token when switching away from remote_control
                 if mission != "remote_control" and controller["holder"] is writer:
