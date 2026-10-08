@@ -407,11 +407,18 @@ async def run_websocket_server(
                 data = await reader.readexactly(length)
 
             if opcode == 0x1:  # text
+                cmd = None
                 try:
                     cmd = json.loads(data.decode())
+                    if not isinstance(cmd, dict):
+                        raise ValueError("Command must be a JSON object")
                     handle_command(cmd, writer, client_id, state, node)
                 except Exception as e:
                     node.get_logger().warn(f"WS cmd error from {client_id}: {e}")
+                    action = cmd.get("action") if isinstance(cmd, dict) else None
+                    ws_send(writer, json.dumps({"action_error": {
+                        "action": action, "reason": str(e) or "Command failed"
+                    }}).encode())
 
     def handle_command(cmd: dict, writer, client_id, state, node):
         action = cmd.get("action")
@@ -510,8 +517,8 @@ async def run_websocket_server(
                         pwm_limit=float(cmd.get("pwm_limit", 0.0)),
                         override=not restore,
                     )
-                except (TypeError, ValueError):
-                    node.get_logger().warn(f"Malformed PID tuning from {client_id} ignored")
+                except (TypeError, ValueError) as e:
+                    raise ValueError("Invalid steering PID values") from e
         elif action == "set_compressor":
             # Stops the EBS compressor so the kart is quiet to work on. Disabling it
             # also forces emergency, because a kart that cannot refill its air

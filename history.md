@@ -2489,6 +2489,13 @@ activation and live 20 Hz/rolling/stop validation await steering-motor isolation
 confirmation. `ssh utm` timed out at 192.168.64.3, so VM deployment remains blocked.
 
 
+## 2026-10-08 — Dashboard button feedback and design frame
+
+Rubén requires every blocked or rejected button to light red and show why it cannot act. Created src/kb_dashboard/frame.md with this first interaction rule and linked it from AGENTS.md and README.md. The shared instruction source in ai-dotfiles now routes UI work through the interface frame and replaces the old “Do nothing” placeholder example with explicit rejection feedback.
+
+The dashboard uses guarded, reachable Start and Tank Bypass buttons, a persistent shared status message and red feedback on the originating button. Disconnection, stale safety status, redundant emergency/reset actions and rejected Start name the reason. Emergency requests remain sendable without fresh telemetry. Safety and bypass requests wait for actual telemetry; missing confirmation becomes a red warning. PID Apply stays open if delivery fails. Backend command exceptions, including malformed PID values, now return action_error to the requesting client. Safety policy and motion authorization are unchanged.
+
+
 ## 2026-10-08 — Hall telemetry flashed and live cadence verified
 
 Rubén confirmed the physical switch was in Manual and explicitly authorized flashing.
@@ -2503,3 +2510,5 @@ motor_halls, capture initialization success, bits 3, counters [0,0,0], no interv
 yet and warming_up. This verifies fast telemetry reaches the running dashboard;
 physical rolling, calibrated magnitude, stop expiry and control-loop cadence still
 need a hardware check. The service is active. No protected-branch merge was made.
+
+Validation: 248 dashboard Python tests and 14 JavaScript tests passed. The six initial button-feedback regressions failed against the previous wsSend implementation; the five new server socket cases also failed before the server fix. Review added coverage ensuring Stop and EBS remain sendable without fresh telemetry and delayed errors preserve an unrelated pending request. Browser checks at 1280×800 and 844×390 showed a blocked Start tap lighting the button red with a persistent readable explanation.

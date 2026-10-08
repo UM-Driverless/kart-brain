@@ -528,7 +528,7 @@ function updateMissionUI() {
   $('manualWidget')?.classList.toggle('on', currentMission === 'remote_control');
   // Safety status and reset remain available in every mission.
   document.querySelectorAll('[data-st="running"]').forEach(button => {
-    button.disabled = !isAuto;
+    button.setAttribute('aria-disabled', String(!isAuto));
     button.textContent = 'Start';
     button.title = isAuto ? 'Start the selected autonomous mission' : 'Under Mission, select Auto or an autonomous event to use Start';
   });
@@ -591,7 +591,7 @@ function updateBenchControls(d) {
   btn.classList.toggle('on', active);
   btn.classList.toggle('requested', requested && !active);
   btn.classList.toggle('unavailable', !available);
-  btn.disabled = !available || (!requested && running);
+  btn.setAttribute('aria-disabled', String(!available || (!requested && running)));
   btn.innerHTML = `<span><i class="safety-light"></i>TANK BYPASS</span><small>${available ? (active ? 'ACTIVE' : (requested ? 'PENDING' : 'OFF')) : 'UNAVAILABLE'}</small>`;
   btn.title = available
     ? (active ? `Tank pressure bypass ON; steering disabled; throttle capped at ${cap}%. ${pressure}. This button does not Start the kart.`
@@ -619,8 +619,7 @@ function updateBenchControls(d) {
 }
 
 function toggleBenchMode() {
-  if (!lastData || !benchStatusFresh() || !lastData.bench_mode_available) return;
-  wsSend({action:'set_bench_mode', enabled: !lastData.bench_mode_enabled});
+  wsSend({action:'set_bench_mode', enabled: !(lastData && lastData.bench_mode_enabled)});
 }
 
 function setBenchThrottle(raw) {
@@ -700,14 +699,14 @@ function wirePidControls() {
   $('btnPidOpen').onclick = () => togglePidPanel(true);
   $('btnPidClose').onclick = () => togglePidPanel(false);
   $('btnPidApply').onclick = () => {
-    wsSend({
+    const sent = wsSend({
       action: 'set_steer_pid',
       kp: parseFloat($('pidKp').value) || 0,
       ki: parseFloat($('pidKi').value) || 0,
       kd: parseFloat($('pidKd').value) || 0,
       pwm_limit: parseFloat($('pidLimit').value) || 0,
     });
-    togglePidPanel(false);   // straight back to the pad, which is what the pane is for
+    if (sent) togglePidPanel(false);
   };
   $('btnPidDefaults').onclick = () => {
     // The four boxes are deliberately left alone. What the firmware falls back to is
@@ -938,17 +937,28 @@ function connect() {
       return;
     }
     try {
-      lastData = JSON.parse(e.data);
-      if (lastData.your_id) { myClientId = lastData.your_id; return; }
-      if (lastData.shutdown_orin) { powerOffUpdate(lastData.shutdown_orin, lastData.error); return; }
-      if (lastData.svo_files) {
+      const message = JSON.parse(e.data);
+      if (message.action_error) {
+        const failure = message.action_error;
+        const matches = pendingAction && pendingAction.obj.action === failure.action;
+        const button = matches ? pendingAction.button : actionButtons[failure.action];
+        if (matches) { clearTimeout(actionTimer); pendingAction = null; }
+        actionFeedback(failure.reason || 'Command rejected by the kart', true, button);
+        return;
+      }
+      if (message.your_id) { myClientId = message.your_id; return; }
+      if (message.shutdown_orin) { powerOffUpdate(message.shutdown_orin, message.error); return; }
+      if (message.svo_files) {
         document.querySelectorAll('.svo-dropdown').forEach(sel => {
           sel.innerHTML = '<option value="live">Live Camera</option>';
-          lastData.svo_files.forEach(f => { const o = document.createElement('option'); o.value = f; o.textContent = f; sel.appendChild(o); });
+          message.svo_files.forEach(f => { const o = document.createElement('option'); o.value = f; o.textContent = f; sel.appendChild(o); });
           sel.value = currentSvoFile;
         });
         return;
       }
+      if (message.steer_pid_error) { showPidError(message.steer_pid_error); actionFeedback(message.steer_pid_error, true, actionButtons.set_steer_pid); return; }
+      lastData = message;
+      observeAction(lastData);
       if (lastData.mission) { currentMission = lastData.mission; updateJoystickWidget(); updateMissionUI(); }
       if (lastData.controller_type) { currentControllerType = lastData.controller_type; updateAlgoButtons(); }
       if (lastData.speed_controller_type) { currentSpeedControllerType = lastData.speed_controller_type; updateAlgoButtons(); }
@@ -960,7 +970,7 @@ function connect() {
       }
       if ('bench_mode_available' in lastData) benchStatusAt = performance.now();
       if (lastData.svo_file) { currentSvoFile = lastData.svo_file; document.querySelectorAll('.svo-dropdown').forEach(sel => sel.value = currentSvoFile); }
-      if (lastData.steer_pid_error) { showPidError(lastData.steer_pid_error); return; }
+
       // Reflect ESP32 heartbeat in the connection dot (green only when HB alive)
       const d = $('connDot');
       if (d) { if (lastData.esp32_heartbeat) d.classList.add('ok'); else d.classList.remove('ok'); }
@@ -1016,7 +1026,84 @@ function updateControllerStatus(d) {
   $('manualWidgetJoystick')?.classList.toggle('locked', theirs);
 }
 
-function wsSend(obj) {
+// Discrete actions report delivery and confirm safety changes from actual telemetry.
+let actionButton = null, pendingAction = null, actionTimer = null;
+const actionButtons = Object.create(null);
+function actionFeedback(message, rejected = false, button = actionButton) {
+  let feedback = $('actionFeedback');
+  if (!feedback) {
+    feedback = document.createElement('div');
+    feedback.id = 'actionFeedback';
+    feedback.setAttribute('role', 'status');
+    feedback.setAttribute('aria-live', 'polite');
+    document.body.appendChild(feedback);
+  }
+  document.querySelectorAll('.action-rejected').forEach(el => el.classList.remove('action-rejected'));
+  if (rejected && button) button.classList.add('action-rejected');
+  feedback.classList.toggle('rejected', rejected);
+  feedback.textContent = message;
+  feedback.hidden = false;
+}
+function actionBlockReason(obj, d) {
+  if (obj.action === 'set_bench_mode' && obj.enabled) {
+    if (!d || !benchStatusFresh() || !d.bench_mode_available)
+      return 'Tank bypass unavailable: ' + (d && benchStatusFresh() && d.bench_mode_reason || 'Fresh paired bench status is required');
+    if (d.state === 'running' || d.as_state === 'AS_DRIVING') return 'Stop the kart before enabling tank bypass';
+  }
+  if (obj.action !== 'set_state') return '';
+  if (obj.state === 'idle') return d && d.state === 'idle' && performance.now() - lastTelemetryAt <= 1000 ? 'Kart is already stopped' : '';
+  if (obj.state === 'ebs') return d && d.state === 'ebs' && performance.now() - lastTelemetryAt <= 1000 ? 'Emergency is already latched' : '';
+  if (obj.state === 'running' && !AUTONOMOUS_MISSIONS.has(currentMission))
+    return 'Start unavailable: select Auto or an autonomous event. Remote uses the driving pad';
+  if (!d || performance.now() - lastTelemetryAt > 1000) return 'Waiting for fresh safety status; command not sent';
+  if (obj.state === 'running' && d.state === 'ebs')
+    return 'Start blocked: ' + (d.safety_reason || 'Emergency latched; resolve the fault, then Reset safety');
+  if (obj.state === d.state) return obj.state === 'ebs' ? 'Emergency is already latched' : 'Kart is already ' + d.state;
+  if (obj.state === 'reset' && d.state !== 'ebs' && d.as_state !== 'AS_FINISHED')
+    return 'Reset unavailable: there is no emergency or finished-state latch to clear';
+  return '';
+}
+function observeAction(d) {
+  if (!pendingAction) return;
+  const {obj, button} = pendingAction;
+  const confirmed = obj.action === 'set_state'
+    ? (obj.state === 'reset' ? d.state !== 'ebs' && d.as_state === 'AS_OFF' : d.state === obj.state)
+    : obj.action === 'set_bench_mode' && d.bench_mode_enabled === obj.enabled;
+  if (!confirmed) return;
+  clearTimeout(actionTimer);
+  pendingAction = null;
+  actionFeedback(obj.action === 'set_bench_mode'
+    ? (d.bench_mode_active ? 'Tank bypass active' : obj.enabled ? 'Bypass requested: ' + d.bench_mode_reason : 'Tank bypass off')
+    : 'Kart confirmed: ' + (obj.state === 'reset' ? 'safety reset; stopped' : obj.state), obj.action === 'set_bench_mode' && obj.enabled && !d.bench_mode_active, button);
+}
+document.addEventListener('click', e => {
+  const button = e.target.closest('button');
+  if (button) actionButton = button;
+}, true);
+
+function wsSend(obj, sourceButton = actionButton) {
+  const discrete = !['manual_control', 'list_svo'].includes(obj.action);
+  const button = sourceButton;
+  if (discrete) {
+    actionButtons[obj.action] = button;
+    if (!DEMO && (!ws || ws.readyState !== 1)) {
+      actionFeedback('Connection lost: command not sent. Wait for the dashboard to reconnect', true, button);
+      return false;
+    }
+    const reason = actionBlockReason(obj, lastData);
+    if (reason) { actionFeedback(reason, true, button); return false; }
+    if (pendingAction) clearTimeout(actionTimer);
+    pendingAction = null;
+    const label = {set_state: {running:'Start',idle:'Stop',ebs:'Emergency brake',reset:'Safety reset'}[obj.state], set_bench_mode:'Tank bypass',set_mission:'Mission change',set_steer_pid:'Steering tuning',set_controller:'Steering algorithm',set_speed_controller:'Speed algorithm',set_steer_mode:'Steering mode',set_compressor:'Compressor change',restart:'Restart',take_control:'Remote control',release_control:'Release control',set_target_speed:'Target speed',set_bench_throttle:'Throttle setting',set_svo:'Camera source',shutdown_orin:'Power off'}[obj.action] || 'Command';
+    actionFeedback(label + ' requested' + (['set_state', 'set_bench_mode'].includes(obj.action) ? ' — waiting for confirmation' : ''), false, button);
+    if (['set_state', 'set_bench_mode'].includes(obj.action)) {
+      pendingAction = {obj, button};
+      actionTimer = setTimeout(() => {
+        pendingAction = null;
+        actionFeedback('Request not confirmed: ' + (lastData && (lastData.safety_reason || lastData.bench_mode_reason) || 'No fresh response from the kart'), true, button);
+      }, 2500);
+    }
+  }
   if (DEMO) {
     // No server in demo mode — apply mission/state changes locally so the UI
     // can be explored (mission grid, Start/Stop, joystick widget, algo dropdowns).
@@ -1046,15 +1133,21 @@ function wsSend(obj) {
         };
       }
     }
-    return;
+    return true;
   }
   if (ws && ws.readyState === 1) {
     // Track our ID when we take control
     if (obj.action === 'take_control' || obj.action === 'manual_control') {
       // We'll learn our ID from the server's response in the next broadcast
     }
-    ws.send(JSON.stringify(obj));
+    try { ws.send(JSON.stringify(obj)); }
+    catch {
+      if (discrete) { clearTimeout(actionTimer); pendingAction = null; actionFeedback('Connection lost: command not sent. Wait for the dashboard to reconnect', true, button); }
+      return false;
+    }
+    return true;
   }
+  return false;
 }
 
 // Stop the EBS compressor so the kart is quiet to work on. Disabling also forces
@@ -1086,6 +1179,7 @@ function steerScreen(rad) { return -(rad || 0); }
 
 
 function updatePills(d) {
+  observeAction(d);
   const safety = $('safetyReason');
   if (safety) {
     const reason = typeof d.safety_reason === 'string' ? d.safety_reason : 'Waiting for safety status';
@@ -2048,7 +2142,7 @@ body{
 #benchModeBtn.on .safety-light{ opacity:1; box-shadow:0 0 9px currentColor; }
 #benchModeBtn.requested{ border-color:var(--rc-amber); }
 #benchModeBtn.unavailable{ border-color:var(--rc-line-hard); background:var(--rc-raised); color:var(--rc-label-dim); }
-#benchModeBtn:disabled{ cursor:not-allowed; opacity:.72; }
+#benchModeBtn[aria-disabled="true"]{ cursor:not-allowed; opacity:.72; }
 .global-ebs{ border-color:#e2001a99; color:#ff6b76; background:#2a0c10; }
 .global-ebs.on{ animation:none; border-color:var(--rc-red); color:#fff; background:#970e20; box-shadow:0 0 12px #e2001a33; }
 .global-ebs.on .safety-light{ opacity:1; background:#ff8792; box-shadow:0 0 9px #ff3048; animation:safetyBeacon 1.6s ease-in-out infinite; }
@@ -2057,6 +2151,11 @@ body{
   background:#ff3048; box-shadow:0 0 8px #ff3048; animation:safetyBeacon 1.6s ease-in-out infinite; }
 @keyframes safetyBeacon{ 0%,100%{ opacity:1; } 50%{ opacity:.45; } }
 @media (prefers-reduced-motion:reduce){ .global-ebs.on .safety-light, #pillState.emergency::before{ animation:none; } }
+#actionFeedback{ position:fixed; bottom:14px; left:100px; right:14px; z-index:10000; padding:12px 16px;
+  border:1px solid #777; border-left:3px solid #aaa; background:#171719; color:#eee; font-size:var(--fs-sm); line-height:1.4; box-shadow:0 5px 24px #0008; }
+#actionFeedback[hidden]{ display:none; }
+#actionFeedback.rejected{ border-color:#ff3048; background:#310c13; color:#ffb8bf; }
+button.action-rejected{ background:#970e20 !important; border-color:#ff3048 !important; color:#fff !important; opacity:1 !important; box-shadow:0 0 12px #e2001a88 !important; }
 #benchModeFeedback{ color:var(--rc-amber); font-size:var(--fs-sm); line-height:1.35; overflow-wrap:anywhere; }
 @media(max-width:900px){
   #topbarTitle{ gap:6px; font-size:12px; }
@@ -2425,7 +2524,7 @@ body{
   box-shadow:inset 0 1px 0 rgba(255,255,255,.08), 0 2px 3px rgba(0,0,0,.45);
   transition:filter .12s ease, transform .06s ease; -webkit-user-select:none; user-select:none;
   clip-path:polygon(0 0, calc(100% - var(--cut-sm)) 0, 100% var(--cut-sm), 100% 100%, var(--cut-sm) 100%, 0 calc(100% - var(--cut-sm))); }
-.ctrl-btn:disabled{ opacity:.45; cursor:not-allowed; }
+.ctrl-btn[aria-disabled="true"]{ opacity:.45; cursor:not-allowed; }
 .ctrl-btn:hover{ filter:brightness(1.3); }
 .ctrl-btn:active{ transform:translateY(1px); box-shadow:inset 0 2px 5px rgba(0,0,0,.55); }
 .ctrl-btn.go{ color:var(--rc-green); }
@@ -2902,7 +3001,7 @@ body{
           <div id="missionSelectionStatus" class="safety-reason" role="status" aria-live="polite"></div>
           <div id="safetyReason" class="safety-reason" role="status" aria-live="polite">Waiting for safety status</div>
           <div id="benchModeFeedback" role="status" aria-live="polite">Waiting for bypass status</div>
-          <div class="ctrl-row"><button class="ctrl-btn go" data-st="running" onclick="wsSend({action:'set_state',state:'running'})">Start</button><button class="ctrl-btn stop" data-st="idle" onclick="wsSend({action:'set_state',state:AUTONOMOUS_MISSIONS.has(currentMission)?'idle':'ebs'})">Stop</button><button class="ctrl-btn" onclick="wsSend({action:'set_state',state:'reset'})">Reset safety</button><button class="ctrl-btn restart" onclick="rcConfirm('Restart kart-brain', 'The ROS stack restarts and telemetry stops for a few seconds. The Orin itself stays up.', { okText: 'Restart' }).then(ok =&gt; { if (ok) wsSend({ action: 'restart' }); })">Restart</button></div>
+          <div class="ctrl-row"><button class="ctrl-btn go" data-st="running" onclick="wsSend({action:'set_state',state:'running'})">Start</button><button class="ctrl-btn stop" data-st="idle" onclick="wsSend({action:'set_state',state:AUTONOMOUS_MISSIONS.has(currentMission)?'idle':'ebs'})">Stop</button><button class="ctrl-btn" onclick="wsSend({action:'set_state',state:'reset'})">Reset safety</button><button class="ctrl-btn restart" onclick="const sourceButton = this; rcConfirm('Restart kart-brain', 'The ROS stack restarts and telemetry stops for a few seconds. The Orin itself stays up.', { okText: 'Restart' }).then(ok =&gt; { if (ok) wsSend({ action: 'restart' }, sourceButton); })">Restart</button></div>
         </div>
         <div class="rc-panel rc-mpanel rc-joypane" id="rcJoyPane" style="display:none">
           <span class="rc-label">Remote control</span>
@@ -3206,11 +3305,17 @@ body{
       rail: $('misWheel'), win: $('misWheelWin'), items: misTabs,
       onPick: idx => {
         const m = misNames[idx];
-        if (m === misCurrent && !misPending) return;
+        if (m === misCurrent && !misPending) {
+          actionFeedback(misTabs[idx].textContent + ' is already selected', true, misTabs[idx]);
+          return false;
+        }
         misPending = m;
         misRequestedAt = performance.now();
         misStatus('Waiting for the kart to confirm ' + misTabs[idx].textContent + '…');
-        wsSend({ action: 'set_mission', mission: m });
+        if (wsSend({ action: 'set_mission', mission: m }) === false) {
+          window.rcCancelMissionSelection();
+          return false;
+        }
         if (m === 'inspection') wsSend({ action: 'list_svo' });
       },
     });
@@ -3773,7 +3878,7 @@ if (new URLSearchParams(location.search).has('demo')) {
     // Also mirror its lastData assignment. Controls that read the current state back
     // before acting (the compressor toggle) are dead in demo mode without this.
     lastData = d;
-    benchStatusAt = performance.now();
+    benchStatusAt = lastTelemetryAt = performance.now();
     scheduleDashboardPaint(d);
   }, 100);
   dbgLog('DEMO MODE — simulated telemetry');

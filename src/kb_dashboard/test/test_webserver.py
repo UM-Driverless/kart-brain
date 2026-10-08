@@ -350,3 +350,42 @@ class TestPowerOff:
         assert _ws_await_key(s, "shutdown_orin")["shutdown_orin"] == "starting"
         assert _ws_await_key(s, "error", timeout=2.0) is None
         s.close()
+
+
+class TestActionErrors:
+    @pytest.mark.parametrize('command, action, reason', [
+        ('{"action":"set_bench_mode","enabled":"yes"}', 'set_bench_mode', 'boolean'),
+        ('{"action":"set_bench_throttle","percent":31}', 'set_bench_throttle', '0 to 30%'),
+        ('not JSON', None, ''),
+        ('[]', None, ''),
+    ])
+    def test_command_error_is_reported_and_socket_stays_usable(self, srv, command, action, reason):
+        sock = _blocking_ws_connect(srv.port)
+        try:
+            _ws_send_text(sock, command)
+            response = _ws_await_key(sock, 'action_error', timeout=.5)
+            assert response is not None
+            error = response['action_error']
+            assert error['action'] == action
+            assert error['reason'] and reason in error['reason']
+            _ws_send_text(sock, '{"action":"set_mission","mission":"autocross"}')
+            deadline = time.monotonic() + .5
+            while not srv.node.published_missions and time.monotonic() < deadline:
+                time.sleep(.01)
+            assert srv.node.published_missions == ['autocross']
+        finally:
+            sock.close()
+
+    def test_malformed_pid_reports_error_without_publishing(self, srv):
+        published = []
+        srv.node.publish_steer_pid = lambda **kwargs: published.append(kwargs)
+        sock = _blocking_ws_connect(srv.port)
+        try:
+            _ws_send_text(sock, '{"action":"set_steer_pid","kp":"bad"}')
+            response = _ws_await_key(sock, 'action_error', timeout=.5)
+            assert response is not None
+            assert response['action_error']['action'] == 'set_steer_pid'
+            assert 'Invalid steering PID values' in response['action_error']['reason']
+            assert published == []
+        finally:
+            sock.close()

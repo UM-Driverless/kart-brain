@@ -15,7 +15,7 @@ function fixture() {
   const context = {
     document: {querySelectorAll: () => tabs}, window: {},
     $: id => elements[id], performance: {now: () => now},
-    lastData: {state: 'idle'}, wsSend: message => sent.push(message),
+    actionFeedback() {}, lastData: {state: 'idle'}, wsSend: message => sent.push(message),
     rcMakeWheel: options => {
       pick = options.onPick;
       return {go: i => { selected = i; }, sel: () => selected};

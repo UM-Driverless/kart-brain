@@ -805,3 +805,8 @@ present an investigation checkpoint or recovery of tooling as task completion.
 ## 2026-10-08 — Blocked mission configuration to explain a movement inhibit (GPT-6.1 Sol)
 
 The first fix for a Mission wheel jumping back to Manual vetoed selection during an emergency. That reproduced the backend restriction instead of meeting the operator's intended behavior. Rubén clarified that mission configuration must remain available; the emergency should block movement and show a clear warning. The replacement permits mission changes while retaining the emergency latch, zero actuator output, controller checks for reset, and the narrow tank-pressure bypass. Prevention: distinguish selecting a configuration from authorizing movement, and test both independently before treating a rejected configuration as the intended interface behavior.
+
+
+## 2026-10-08 — Blocked dashboard buttons gave no tap feedback (GPT-6.1 Sol)
+
+Start in Manual/Remote and unavailable Tank Bypass used native disabled controls with tooltip-only explanations. On a phone they looked inert. Disconnected commands and ignored safety requests could also disappear without button-level feedback. Replace native disabling for actionable explanations with guarded taps, red button feedback and a visible reason. Keep sending, acceptance and actual state confirmation distinct. The dashboard frame now owns this rule.

@@ -24,6 +24,8 @@ Requires [cloudflared](https://developers.cloudflare.com/cloudflare-one/connecti
 
 ### Dashboard access
 
+Dashboard interaction and design rules live in [the dashboard frame](src/kb_dashboard/frame.md).
+
 | URL | Needs | Notes |
 |---|---|---|
 | `https://kart.rubenayla.xyz` | Internet | Default. Cloudflare Tunnel; works from anywhere. |
