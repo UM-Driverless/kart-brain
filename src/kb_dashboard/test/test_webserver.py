@@ -194,6 +194,31 @@ class TestHTTP:
 # ── WebSocket Tests ────────────────────────────────────────────────────
 
 class TestWebSocket:
+    def test_camera_frames_keep_their_original_cadence(self, srv):
+        jpeg = b"\xff\xd8test-frame"
+        srv.node.get_hud_jpeg = lambda: jpeg
+        s = _blocking_ws_connect(srv.port)
+        try:
+            times = []
+            while len(times) < 3:
+                if _ws_read_frame(s) == jpeg:
+                    times.append(time.monotonic())
+            assert times[-1] - times[0] >= 0.5
+        finally:
+            s.close()
+
+    def test_telemetry_refresh_exceeds_twenty_updates_per_second(self, srv):
+        s = _blocking_ws_connect(srv.port)
+        try:
+            times = []
+            while len(times) < 20:
+                data = json.loads(_ws_read_frame(s))
+                if "speed_source" in data:
+                    times.append(time.monotonic())
+            assert times[-1] - times[0] < 0.95
+        finally:
+            s.close()
+
     def test_handshake(self, srv):
         s = _blocking_ws_connect(srv.port)
         s.close()

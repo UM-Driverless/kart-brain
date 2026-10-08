@@ -41,6 +41,8 @@ the archive whole, only once its last step closes.
   Commit d9b6c54 is pulled on Orin; all 19 Hall tests pass there. The running
   dashboard now reports motor_halls and 155.85108242642295 edges/metre (2026-10-08).
   VM deployment is still blocked by SSH timeout to utm (192.168.64.3).
+  Rubén confirmed wheel movement produces dashboard speed. Hall samples still arrive
+  at 1 Hz from firmware health_task; increase their source rate for smoother speed.
 
 - [ ] **Reconcile stale environment pointers.** README lists the dashboard LAN port
   as 9090, but hardware launch files use 80. `.agents/README.md` lists old SSH/VM

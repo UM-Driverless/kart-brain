@@ -21,6 +21,8 @@ HTML_PATH = Path(__file__).parent / "index.html"
 # Same directory as the page itself: both ship as package_data, so they land wherever the
 # installed package does and neither needs to know the workspace layout.
 ICON_DIR = Path(__file__).parent
+TELEMETRY_REFRESH_HZ = 30
+HUD_FRAME_INTERVAL_S = 0.3
 
 # Shell command that powers the Orin down. Named here rather than inlined so tests can
 # swap it for something harmless — the flow around it (acknowledge, then report a refusal)
@@ -631,9 +633,10 @@ async def run_websocket_server(
             clients.pop(writer, None)
 
     async def broadcast_loop():
-        frame_counter = 0
+        loop = asyncio.get_running_loop()
+        last_hud_at = loop.time()
         while True:
-            await asyncio.sleep(0.1)  # 10 Hz
+            await asyncio.sleep(1 / TELEMETRY_REFRESH_HZ)
             if not clients:
                 continue
 
@@ -656,9 +659,9 @@ async def run_websocket_server(
                     controller["holder"] = None
                     controller["id"] = None
 
-            # HUD JPEG binary (every 3rd tick ≈ 3.3 Hz)
-            frame_counter += 1
-            if frame_counter % 3 == 0 and hasattr(node, "get_hud_jpeg"):
+            # Keep camera bandwidth independent of the telemetry refresh rate.
+            if loop.time() - last_hud_at >= HUD_FRAME_INTERVAL_S and hasattr(node, "get_hud_jpeg"):
+                last_hud_at = loop.time()
                 jpeg = node.get_hud_jpeg()
                 if jpeg:
                     for w in list(clients):
