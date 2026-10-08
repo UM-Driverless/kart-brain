@@ -365,6 +365,7 @@ class ConeFollowerNode(Node):
         self._detection_invalid = False
         self._received_detections = False
         self._desired_mode_pub = self.create_publisher(Frame, "/kart/controller_steer_mode", 10)
+        self._config_pub = self.create_publisher(String, "/kart/controller_config", 10)
         self._sensor_safety_pub = self.create_publisher(String, "/kart/controller_safety", 10)
         self.create_timer(0.1, self._publish_sensor_safety)
         self.timer = self.create_timer(0.1, self._safety_check)
@@ -1166,6 +1167,11 @@ class ConeFollowerNode(Node):
         mode.type = Frame.ORIN_STEER_MODE
         mode.payload = [1 if self.controller_type == "none" else 0]
         self._desired_mode_pub.publish(mode)
+        if hasattr(self, "_config_pub"):
+            config = String()
+            config.data = json.dumps(dict(steering=self.controller_type,
+                speed=self.speed_controller_type, max_speed=self.max_speed))
+            self._config_pub.publish(config)
 
     def _safety_check(self):
         """@brief Timer callback: decide what to command when no detections are arriving.

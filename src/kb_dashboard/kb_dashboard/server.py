@@ -10,6 +10,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import math
 import secrets
 from pathlib import Path
 from http.cookies import SimpleCookie
@@ -79,6 +80,18 @@ def _parse_cookies(header_str: str) -> dict[str, str]:
             k, v = item.strip().split("=", 1)
             cookies[k.strip()] = v.strip()
     return cookies
+
+
+def validate_bench_action(cmd):
+    if cmd.get("action") == "set_bench_mode":
+        value = cmd.get("enabled")
+        if type(value) is not bool:
+            raise ValueError("Bench enabled must be a boolean")
+    else:
+        value = cmd.get("percent")
+        if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 30:
+            raise ValueError("Bench throttle must be a finite number from 0 to 30%")
+    return value
 
 
 async def run_websocket_server(
@@ -416,6 +429,12 @@ async def run_websocket_server(
                 cmd_map = {"idle": "stop", "running": "start", "ebs": "ebs", "reset": "reset"}
                 if hasattr(node, "publish_state_cmd"):
                     node.publish_state_cmd(cmd_map[new_state])
+        elif action in ("set_bench_mode", "set_bench_throttle"):
+            value = validate_bench_action(cmd)
+            if action == "set_bench_mode":
+                node.publish_bench_mode(value)
+            else:
+                node.publish_bench_throttle(value)
         elif action == "take_control":
             old_id = controller["id"]
             controller["holder"] = writer

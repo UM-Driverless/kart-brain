@@ -202,6 +202,11 @@ def bench_ready(enabled=True, mode=1, mission="autonomous", flags=17, faults=4):
     s.on_controller_safety("",0)
     s.on_controller_mode(mode,0)
     s.note_command("auto",(.25,0),0)
+    s.bench_initialized = True
+    s.bench_config = dict(steering="none",speed="constant_throttle_blind",max_speed=.25)
+    s.bench_config_time = s.bridge_scale_time = 0
+    s.bridge_scale = 5.0
+    s.set_bench_mode(True,0)
     s.tick(0)
     return s
 
@@ -237,6 +242,7 @@ def test_bench_throttle_timeouts_and_emergency_stop(failure):
     if failure != "command":
         s.note_command("auto",(.25,0),.6)
     if failure != "controller":
+        s.bench_config_time = s.bridge_scale_time = .6
         s.on_controller_safety("",.6)
         s.on_controller_mode(1,.6)
     if failure == "emergency":
@@ -257,3 +263,63 @@ def test_bench_runtime_requires_paired_firmware_even_with_healthy_pressure():
     s=bench_ready(flags=1, faults=0)
     assert not s.ready(0)
     assert s.on_state_cmd("start",0)[0] is None
+
+
+def test_bench_capability_does_not_enable_on_boot():
+    s=SafetySupervisor(bench_throttle=True)
+    assert not s.bench_mode_enabled
+    assert not s.bench_snapshot(0)["bench_mode_enabled"]
+
+
+@pytest.mark.parametrize("bad", [None,0,1,"true",[],{},float("nan")])
+def test_bench_enable_rejects_bad_types(bad):
+    s=bench_ready();s.set_bench_mode(False,0)
+    assert not s.set_bench_mode(bad,0)
+    assert not s.bench_mode_enabled
+
+
+def test_bench_disable_stops_driving_without_clearing_emergency():
+    s=bench_ready();s.on_state_cmd("start",0)
+    assert s.state == AS_DRIVING
+    assert s.set_bench_mode(False,0)
+    assert s.state == AS_OFF and s.mux((1,0),(0,0),0)==(0,0)
+    assert s.on_state_cmd("start",0)[0] is None
+    s.logic.state=AS_EMERGENCY
+    s.set_bench_mode(False,0)
+    assert s.state == AS_EMERGENCY
+
+
+@pytest.mark.parametrize("bad", [None,True,False,"20",[],{},float("nan"),float("inf"),-1,30.1])
+def test_bench_throttle_rejects_invalid_requests(bad):
+    s=bench_ready()
+    assert s.validate_bench_throttle(bad,0)
+
+
+def test_bench_throttle_uses_actual_scale_and_stopped_only():
+    s=bench_ready();s.bridge_scale=10;s.bench_config['max_speed']=2
+    assert s.bench_snapshot(0)['bench_throttle_percent']==20
+    assert not s.validate_bench_throttle(30,0)
+    s.on_state_cmd('start',0)
+    assert s.validate_bench_throttle(20,0)
+    assert not s.set_bench_mode(True,0)
+    assert s.validate_bench_throttle(20,.6)
+
+
+def test_bench_enable_requires_fresh_config_and_rejects_other_speed_modes():
+    s=bench_ready();s.set_bench_mode(False,0)
+    s.bench_config['speed']='constant_speed'
+    assert not s.set_bench_mode(True,0)
+    s.bench_config['speed']='constant_throttle_blind'
+    assert not s.set_bench_mode(True,.6)
+
+
+def test_bench_throttle_requires_actual_none_config_not_generic_pwm_mode():
+    s=bench_ready();s.bench_config["steering"]="geometric"
+    assert s.validate_bench_throttle(20,0)
+    assert not s.ready(0)
+
+
+def test_bench_enable_waits_for_verified_startup_zero():
+    s=bench_ready();s.set_bench_mode(False,0);s.bench_initialized=False
+    assert not s.set_bench_mode(True,0)
+    assert "verified zero" in s.bench_notice

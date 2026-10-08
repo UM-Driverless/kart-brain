@@ -76,3 +76,50 @@ def test_required_controller_inputs(controller,speed,received,age,fresh,reason):
     node._desired_mode_pub=SimpleNamespace(publish=lambda msg: None)
     node._publish_sensor_safety()
     assert messages[-1].data == reason
+
+
+def test_bench_parameter_update_never_reports_requested_percent_as_readback():
+    import sys
+    sys.path.insert(0,str(SCRIPTS))
+    from safety_supervisor import SafetySupervisor
+    s=SafetySupervisor(bench_throttle=True)
+    s.bench_config=dict(steering='none',speed='constant_throttle_blind',max_speed=0)
+    calls=[]
+    class Parameter:
+        def __init__(self,name,value):self.name=name;self.value=value
+        def to_parameter_msg(self):return self
+    future=SimpleNamespace(add_done_callback=lambda cb:calls.append(cb))
+    node=callbacks('state_machine_node.py','StateMachineNode',{'_apply_bench_speed'}, {
+        'AS_OFF':0,'Parameter':Parameter,'SetParameters':SimpleNamespace(Request=SimpleNamespace),
+        'time':SimpleNamespace(monotonic=lambda:1)})
+    node._logic=s
+    node._controller_params=SimpleNamespace(service_is_ready=lambda:True,call_async=lambda req:future)
+    node._apply_bench_speed(0)
+    assert s.bench_pending and s.state==0
+    assert s.bench_config['max_speed']==0
+    calls[0](SimpleNamespace(result=lambda:SimpleNamespace(results=[SimpleNamespace(successful=True)])))
+    assert not s.bench_pending and node._bench_zero_ack
+    assert not s.bench_initialized
+    assert s.bench_config['max_speed']==0 # Only controller heartbeat updates applied readback.
+
+
+def test_bench_ros_input_validation_and_scale():
+    import json,sys
+    sys.path.insert(0,str(SCRIPTS))
+    from safety_supervisor import SafetySupervisor
+    s=SafetySupervisor(bench_throttle=True)
+    s.bench_initialized=True
+    s.on_mission('autonomous');s.on_safety([1,4,0,17,0,8],0)
+    s.on_controller_mode(1,0);s.on_controller_safety('',0)
+    s.bench_config=dict(steering='none',speed='constant_throttle_blind',max_speed=0)
+    s.bench_config_time=s.bridge_scale_time=0;s.bridge_scale=10
+    node=callbacks('state_machine_node.py','StateMachineNode',{'_on_bench_throttle'},
+        {'json':json,'time':SimpleNamespace(monotonic=lambda:0)})
+    node._logic=s;applied=[];node._apply_bench_speed=applied.append
+    for data in ('NaN','true','[20]','"20"','31','bad'):
+        node._on_bench_throttle(SimpleNamespace(data=data))
+    assert applied==[]
+    node._on_bench_throttle(SimpleNamespace(data='20'))
+    assert applied==[2.0]
+    s.logic.state=2;node._on_bench_throttle(SimpleNamespace(data='22'))
+    assert applied==[2.0]

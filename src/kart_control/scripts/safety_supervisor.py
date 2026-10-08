@@ -27,6 +27,14 @@ RESET_TIMEOUT = 2.0
 class SafetySupervisor:
     def __init__(self, bench_throttle=False):
         self.bench_throttle = bench_throttle is True
+        self.bench_initialized = not self.bench_throttle
+        self.bench_mode_enabled = False
+        self.bench_config = None
+        self.bench_config_time = None
+        self.bridge_scale = None
+        self.bridge_scale_time = None
+        self.bench_pending = False
+        self.bench_notice = ""
         self.logic = StateLogic()
         self.status = None
         self.status_time = None
@@ -84,8 +92,98 @@ class SafetySupervisor:
         self.controller_reason = reason
         self.controller_time = now
 
+    def bench_available(self, now):
+        return (self.bench_throttle and self.fresh_status(now)
+                and bool(self.status[3] & 16))
+
+    def bench_config_fresh(self, now):
+        return (self.bench_config is not None and self.bench_config_time is not None
+                and 0 <= now - self.bench_config_time <= STATUS_TIMEOUT
+                and self.bridge_scale is not None and self.bridge_scale > 0
+                and self.bridge_scale_time is not None
+                and 0 <= now - self.bridge_scale_time <= 2.0)
+
+    def bench_percent(self, now):
+        if not self.bench_config_fresh(now):
+            return None
+        return self.bench_config["max_speed"] / self.bridge_scale * 100
+
+    def bench_eligibility(self, now):
+        if not self.bench_available(now):
+            return "Fresh paired bench firmware required"
+        if not self.bench_initialized:
+            return "Waiting for verified zero throttle at startup"
+        if self.status[2] or self.status[1] & ~4:
+            return "Other safety faults must be repaired"
+        if self.mission != "autonomous" or self.controller_mode != 1:
+            return "Select Autonomous and steering None"
+        if not self.bench_config_fresh(now):
+            return "Waiting for controller and bridge settings"
+        if (self.bench_config["steering"] != "none" or self.bench_config["speed"]
+                not in ("constant_throttle", "constant_throttle_blind", "constant_throttle_stop")):
+            return "Select steering None and constant throttle"
+        if not self.controller_ready(now):
+            return "Controller inputs must be fresh and healthy"
+        percent = self.bench_percent(now)
+        if percent is None or not math.isfinite(percent) or not 0 <= percent <= 30:
+            return "Throttle must be between 0 and 30%"
+        if self.bench_pending:
+            return "Applying throttle setting"
+        return ""
+
+    def set_bench_mode(self, enabled, now):
+        if type(enabled) is not bool:
+            self.bench_notice = "Bench enable must be a boolean"
+            return False
+        if not enabled:
+            self.bench_mode_enabled = False
+            self._arm_requested = self._remote_active = False
+            if self.state != AS_EMERGENCY:
+                self.logic.state = AS_OFF
+            self.bench_notice = "No-air bench mode OFF; propulsion inhibited"
+            return True
+        reason = ("Stop before enabling bench mode" if self.state not in (AS_OFF, AS_READY)
+                  else self.bench_eligibility(now))
+        if reason:
+            self.bench_notice = reason
+            return False
+        self.bench_mode_enabled = True
+        self._arm_requested = True
+        self.bench_notice = ""
+        return True
+
+    def validate_bench_throttle(self, percent, now):
+        if type(percent) not in (int, float) or not math.isfinite(percent) or not 0 <= percent <= 30:
+            return "Throttle must be a finite number from 0 to 30%"
+        if not self.bench_initialized and percent != 0:
+            return "Waiting for verified zero throttle at startup"
+        if self.state not in (AS_OFF, AS_READY):
+            return "Stop before changing throttle"
+        if not self.bench_available(now) or not self.bench_config_fresh(now):
+            return "Fresh paired bench firmware and settings required"
+        if (self.mission != "autonomous" or self.controller_mode != 1
+                or self.bench_config["steering"] != "none" or self.bench_config["speed"] not in (
+                "constant_throttle", "constant_throttle_blind", "constant_throttle_stop")):
+            return "Select Autonomous, steering None and constant throttle"
+        if self.status[2] or self.status[1] & ~4:
+            return "Other safety faults must be repaired"
+        if self.bench_pending:
+            return "Applying throttle setting"
+        return ""
+
+    def bench_snapshot(self, now):
+        available = self.bench_available(now)
+        return dict(bench_mode_available=available,
+                    bench_mode_enabled=self.bench_mode_enabled and available,
+                    bench_mode_reason=self.bench_notice or self.bench_eligibility(now) or
+                        ("No-air bench mode ON" if self.bench_mode_enabled else "No-air bench mode OFF"),
+                    bench_throttle_cap_percent=30 if available else None,
+                    bench_throttle_percent=self.bench_percent(now) if available else None,
+                    bench_pressure_fault=bool(self.status[1] & 4) if available else None)
+
     def bench_throttle_authorized(self, now):
-        return (self.bench_throttle and self.mission == "autonomous"
+        return (self.bench_mode_enabled and not self.bench_pending
+                and not self.bench_eligibility(now) and self.mission == "autonomous"
                 and self.controller_mode == 1 and self.fresh_status(now)
                 and bool(self.status[3] & 16))
 
@@ -260,6 +358,8 @@ class SafetySupervisor:
             return "BENCH THROTTLE: 30% electrical cap; steering disabled; " + (
                 "tank pressure too low (bench override active)"
                 if self.status[1] & 4 else "elevated wheels only")
+        if self.status[3] & 16 and not self.bench_mode_enabled:
+            return "No-air bench mode OFF; propulsion inhibited; " + self._fault_text(self.status[1] | self.status[2])
         faults = self.status[1] | self.status[2]
         if faults:
             return self._fault_text(faults)

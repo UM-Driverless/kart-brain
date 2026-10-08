@@ -8,6 +8,7 @@ and send commands (mission select, start/stop, EBS).
 """
 
 import asyncio
+import json
 import threading
 import time
 
@@ -197,6 +198,11 @@ class DashboardNode(Node):
             String, "/kart/state", self._on_kart_state, qos_reliable
         )
 
+        self.create_subscription(String, "/kart/bench_status", self._on_bench_status, qos_reliable)
+        self._bench_mode_pub = self.create_publisher(String, "/dashboard/bench_mode", 10)
+        self._bench_throttle_pub = self.create_publisher(String, "/dashboard/bench_throttle", 10)
+        self._pending_bench_commands = []
+
         # Publishers for mission commands
         self.mission_pub = self.create_publisher(String, "/dashboard/mission", 10)
         self.state_cmd_pub = self.create_publisher(String, "/dashboard/state_cmd", 10)
@@ -242,6 +248,18 @@ class DashboardNode(Node):
         self._selftest_timer = self.create_timer(2.0, self._selftest)
 
         self.get_logger().info(f"Dashboard node started, web UI on port {self.port}")
+
+    def _on_bench_status(self, msg):
+        try:
+            self.state.update_bench_status(json.loads(msg.data))
+        except (ValueError, TypeError):
+            self.get_logger().warn("Invalid bench status")
+
+    def publish_bench_mode(self, enabled):
+        self._pending_bench_commands.append((self._bench_mode_pub, json.dumps(enabled)))
+
+    def publish_bench_throttle(self, percent):
+        self._pending_bench_commands.append((self._bench_throttle_pub, json.dumps(percent)))
 
     def _selftest(self):
         """@brief One-shot self-test: log subscriber counts for all publishers."""
@@ -494,6 +512,10 @@ class DashboardNode(Node):
 
     def _flush_pending(self):
         """@brief Publish any pending commands. Safe to call from any ROS callback."""
+        pending = getattr(self, "_pending_bench_commands", [])
+        self._pending_bench_commands = []
+        for pub, value in pending:
+            msg = String(); msg.data = value; pub.publish(msg)
         cmd = self._pending_manual_cmd
         if cmd is not None:
             # If no WS input for 500ms, publish zeros (safe stop)

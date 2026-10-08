@@ -9,6 +9,7 @@ Floats are scaled to int32 before transmission:
 
 The framing (SOF/LEN/TYPE/CRC) is unchanged — only payload encoding changed.
 """
+import math
 import threading
 import time
 
@@ -689,6 +690,12 @@ class DashboardState:
             "mission": "manual",
             "state": "idle",  # idle | running | ebs
             "safety_reason": "Waiting for safety status",
+            "bench_mode_available": False,
+            "bench_mode_enabled": False,
+            "bench_mode_reason": "Waiting for bench status",
+            "bench_throttle_cap_percent": None,
+            "bench_throttle_percent": None,
+            "bench_pressure_fault": None,
             "steer_mode": "pid",  # "pid" or "pwm"
             # Steering PID gains as last reported by the ESP32 over ESP_STEER_PID.
             # None means the firmware has not reported yet — either it predates the
@@ -706,7 +713,26 @@ class DashboardState:
         }
         self._heartbeat_time = 0.0
         self._safety_time = None
+        self._bench_time = None
         self._hall = None
+
+    def update_bench_status(self, status):
+        fields = ("bench_mode_available", "bench_mode_enabled", "bench_mode_reason",
+                  "bench_throttle_cap_percent", "bench_throttle_percent", "bench_pressure_fault")
+        if (not isinstance(status, dict) or any(key not in status for key in fields)
+                or type(status["bench_mode_available"]) is not bool
+                or type(status["bench_mode_enabled"]) is not bool
+                or not isinstance(status["bench_mode_reason"], str)
+                or (status["bench_pressure_fault"] is not None and type(status["bench_pressure_fault"]) is not bool)
+                or status["bench_throttle_cap_percent"] not in (None, 30)):
+            raise ValueError("Malformed bench status")
+        for key in ("bench_throttle_cap_percent", "bench_throttle_percent"):
+            value = status[key]
+            if value is not None and (type(value) not in (int, float) or not math.isfinite(value) or value < 0):
+                raise ValueError("Malformed bench throttle status")
+        with self.lock:
+            self.data.update({key: status[key] for key in fields})
+            self._bench_time = time.monotonic()
 
     def configure_hall_speed(self, edges_per_metre=0.0, enabled=True):
         """Select the display's speed source; zero scale means uncalibrated."""
@@ -744,6 +770,11 @@ class DashboardState:
         """
         with self.lock:
             d = dict(self.data)
+            if self._bench_time is None or time.monotonic() - self._bench_time > 0.5:
+                d.update(bench_mode_available=False, bench_mode_enabled=False,
+                         bench_mode_reason="Bench status missing or stale",
+                         bench_throttle_cap_percent=None, bench_throttle_percent=None,
+                         bench_pressure_fault=None)
             if self._safety_time is not None and time.monotonic() - self._safety_time > 2.0:
                 d["safety_reason"] = "Safety status stale — waiting for the state machine"
             if self._hall is not None:
