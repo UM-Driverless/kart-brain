@@ -254,6 +254,8 @@ http://<orin-ip>:9090
 
 ## Blocked
 
+- [⏸ VM offline] **Deploy the mission-selection feedback fix to UTM.** Commits `e7d3a10` and `4a0d359` are deployed and browser-verified on the Orin. `ssh utm` timed out on 2026-10-08; pull `dev` and rebuild `kb_dashboard` with `--symlink-install` when the VM is reachable.
+
 - [⏸ Manual confirmation] **Activate 30 Hz dashboard refresh.** Commit 9821e6f is pushed and pulled on Orin; both socket cadence tests pass there. Restart the server after Rubén confirms Manual, then measure live WebSocket cadence. Hall source still needs a separate firmware rate increase.
 
 ## Done
