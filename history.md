@@ -2479,3 +2479,11 @@ verified a five-second nominal 0.1 km/h stream stays valid across every 50 ms pa
 The bridge's actual RX callback passed a temporary compiled stub harness preserving
 signed fields and legacy health splitting. Firmware passed 80 native and five monitor
 tests; production S3, classic ESP32 and bench S3 builds linked successfully.
+
+Target preparation: `95f1144` (brain) and `c11423b` (firmware) were pushed and
+fast-forwarded on the Orin. Its `kb_interfaces`, `kb_coms_micro` and `kb_dashboard`
+packages built successfully in 40.7 s; all 32 Hall tests also passed there. The
+bench-throttle S3 firmware rebuilt on the Orin in 19.19 s with `main.c` compiled.
+No firmware flash, service restart, reset or motion command was performed. Safe
+activation and live 20 Hz/rolling/stop validation await steering-motor isolation
+confirmation. `ssh utm` timed out at 192.168.64.3, so VM deployment remains blocked.

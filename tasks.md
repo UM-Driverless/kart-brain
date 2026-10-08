@@ -43,8 +43,11 @@ the archive whole, only once its last step closes.
   VM deployment is still blocked by SSH timeout to utm (192.168.64.3).
   Rubén confirmed wheel movement produces dashboard speed. Hall samples still arrive
   at 1 Hz from firmware health_task. The 2026-10-08 implementation adds dedicated
-  20 Hz capture and period-based estimates with expiry; local tests pass. Build and
-  safe firmware activation plus live rate/rolling/stop checks remain pending.
+  20 Hz capture and period-based estimates with expiry. Brain `95f1144` and firmware
+  `c11423b` are pushed and pulled onto the Orin; all three affected ROS packages and
+  the bench firmware build there, and 32 Hall tests pass there. Activation and live
+  rate/rolling/stop checks await steering-motor isolation confirmation. No restart
+  or flash was performed; the VM SSH timeout remains.
 
 - [ ] **Reconcile stale environment pointers.** README lists the dashboard LAN port
   as 9090, but hardware launch files use 80. `.agents/README.md` lists old SSH/VM
