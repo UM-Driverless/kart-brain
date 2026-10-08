@@ -1100,7 +1100,7 @@ function wsSend(obj, sourceButton = actionButton) {
       pendingAction = {obj, button};
       actionTimer = setTimeout(() => {
         pendingAction = null;
-        actionFeedback('Request not confirmed: ' + (lastData && (lastData.safety_reason || lastData.bench_mode_reason) || 'No fresh response from the kart'), true, button);
+        actionFeedback('Request not confirmed: ' + (lastData && (obj.action === 'set_bench_mode' ? lastData.bench_mode_reason : lastData.safety_reason) || 'No fresh response from the kart'), true, button);
       }, 2500);
     }
   }

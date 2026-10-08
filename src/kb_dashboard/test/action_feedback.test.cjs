@@ -86,3 +86,10 @@ test('matching error cancels its pending action and keeps the refusal visible',(
   assert.equal(f.feedback.textContent,'Reset refused');
   assert.ok(f.button.classList.contains('action-rejected'));
 });
+
+test('unconfirmed bypass names its eligibility reason rather than the general pressure fault',()=>{
+  const f=fixture({state:'ebs'});f.context.lastData.bench_mode_reason='Select Autonomous and steering None';
+  f.send({action:'set_bench_mode',enabled:true});f.expire();
+  assert.match(f.feedback.textContent,/Select Autonomous and steering None/);
+  assert.ok(f.button.classList.contains('action-rejected'));
+});
