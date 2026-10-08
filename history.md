@@ -2257,3 +2257,9 @@ not treated as the Orin. `10.7.20.129` refused ports 22, 80 and 9090. No service
 tunnel, network setting, firmware or actuator state was changed. Recovery and
 origin checks remain deferred until the operator finishes the wiring work and
 authorizes hardware access.
+
+After Rubén reported the wiring ready, a fresh check at 19:56:53 CEST still
+returned HTTP 530 from both public hostnames. Fresh SSH attempts to
+`10.42.0.1`, `10.7.20.142` and `orin-remote` also failed. Wiring readiness did
+not restore the Orin's network path; USB phone tethering or another verified
+internet connection remains the next recovery step.

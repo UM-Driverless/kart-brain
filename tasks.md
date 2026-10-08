@@ -14,7 +14,7 @@ the archive whole, only once its last step closes.
 
 ## Ready
 
-- [⏸ operator is finishing wiring] **Restore Orin access and verify the public dashboard origin.** On 2026-10-08 both `kart.rubenayla.xyz` and `orin.rubenayla.xyz` returned Cloudflare HTTP 530/error 1033, meaning no healthy tunnel connector reached Cloudflare. The historical LAN and kart-access-point addresses also did not accept SSH or dashboard connections. Once hardware access resumes, verify Orin power/network, `cloudflared.service`, and `kart-brain.service`; then check the dashboard locally before confirming the public URL. Read-only evidence is in `history.md` under the same date.
+- [⏸ Orin has no verified network path] **Restore Orin access and verify the public dashboard origin.** On 2026-10-08 both `kart.rubenayla.xyz` and `orin.rubenayla.xyz` returned Cloudflare HTTP 530/error 1033, meaning no healthy tunnel connector reached Cloudflare. The historical LAN and kart-access-point addresses also did not accept SSH or dashboard connections, including after Rubén reported the wiring ready. Connect the Orin through the USB phone tether with Personal Hotspot enabled or establish another verified network path; then verify `cloudflared.service` and `kart-brain.service`, and check the dashboard locally before confirming the public URL. Read-only evidence is in `history.md` under the same date.
 
 - [ ] **Validate perception source timestamps before treating republished frames as fresh.** Sensor safety checks arrival age and finite coordinates, but does not yet reject an old camera frame republished with fresh arrival times. Establish timestamp semantics across live ZED, recorded video and simulation, then test frozen/repeated source frames.
 
