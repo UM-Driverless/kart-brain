@@ -501,7 +501,10 @@ function updateJoystickWidget() {
 // onclick handlers, and re-rendered markup would lose any listener bound at init time.
 function rcPop(id) {
   const el = $(id);
-  if (el) el.classList.toggle('on');
+  if (!el) return;
+  el.classList.toggle('on');
+  const trigger = document.querySelector(`[aria-controls="${id}"]`);
+  if (trigger) trigger.setAttribute('aria-expanded', el.classList.contains('on') ? 'true' : 'false');
 }
 
 function updateMissionUI() {
@@ -526,8 +529,8 @@ function updateMissionUI() {
   // Safety status and reset remain available in every mission.
   document.querySelectorAll('[data-st="running"]').forEach(button => {
     button.disabled = !isAuto;
-    button.textContent = isAuto ? 'Start' : 'Start (auto only)';
-    button.title = isAuto ? '' : 'Start applies to autonomous missions';
+    button.textContent = 'Start autonomous';
+    button.title = isAuto ? 'Start the selected autonomous mission' : 'Under Mission, select Auto or an autonomous event to use Start autonomous';
   });
   updateAlgoButtons();
 }
@@ -564,7 +567,8 @@ function updateBenchControls(d) {
 
   const fresh = !!d && benchStatusFresh();
   const available = fresh && d.bench_mode_available === true;
-  const enabled = available && d.bench_mode_enabled === true;
+  const requested = available && d.bench_mode_enabled === true;
+  const active = requested && d.bench_mode_active === true;
   const running = d && (d.state === 'running' || d.as_state === 'AS_DRIVING');
   const reason = fresh && d.bench_mode_reason ? String(d.bench_mode_reason)
     : (fresh ? 'Paired bench firmware and runtime are not available' : 'Bench status is stale');
@@ -581,12 +585,16 @@ function updateBenchControls(d) {
     }
   }
 
-  btn.classList.toggle('on', enabled);
+  const pressure = available && d.bench_pressure_fault === true
+    ? `Tank pressure low — bypass ${active ? 'active' : 'inactive'}` : '';
+  btn.classList.toggle('on', active);
+  btn.classList.toggle('requested', requested && !active);
   btn.classList.toggle('unavailable', !available);
-  btn.disabled = !available || (!enabled && running);
-  btn.innerHTML = `<span>TANK BYPASS</span><small>${available ? (enabled ? 'ON · STEERING OFF · '+cap+'% CAP' : 'OFF') : 'UNAVAILABLE'}</small>`;
+  btn.disabled = !available || (!requested && running);
+  btn.innerHTML = `<span>TANK BYPASS</span><small>${available ? (active ? 'ON · STEERING OFF · '+cap+'% CAP' : (requested ? 'REQUESTED · INACTIVE' : 'OFF')) : 'UNAVAILABLE'}</small>`;
   btn.title = available
-    ? (enabled ? `Tank pressure bypass ON; steering disabled; throttle capped at ${cap}%. This button does not Start the kart.`
+    ? (active ? `Tank pressure bypass ON; steering disabled; throttle capped at ${cap}%. ${pressure}. This button does not Start the kart.`
+               : requested ? `${reason}. ${pressure || 'Tank-pressure bypass inactive'}. Press to turn the request OFF.`
                : (running ? 'Stop the kart before enabling the tank-pressure bypass'
                           : `${reason}. Enable tank-pressure bypass; Start remains separate`))
     : `Tank-pressure bypass unavailable: ${reason}`;
@@ -599,7 +607,7 @@ function updateBenchControls(d) {
     const pending = benchThrottleDraft
       ? `Requested ${benchThrottleDraft.percent.toFixed(1)}% · ${benchThrottleDraft.rejectedReason ? 'Rejected: '+benchThrottleDraft.rejectedReason+' · ' : ''}`
       : '';
-    const status = enabled || (benchThrottleDraft && benchThrottleDraft.rejectedReason) ? '' : ' · '+reason;
+    const status = active || (benchThrottleDraft && benchThrottleDraft.rejectedReason) ? '' : ' · '+reason;
     applied.textContent = `${pending}Applied ${actual.toFixed(1)}% · ${cap.toFixed(0)}% ceiling${status}`;
     if (!benchThrottleDraft && document.activeElement !== range) range.value = String(actual);
     if (!benchThrottleDraft && document.activeElement !== input) input.value = actual.toFixed(1);
@@ -1924,14 +1932,13 @@ body{
 .gp-seg button.sel{ background:#4a9eff; color:#fff; }
 
 /* topbar restyled as the mockup's, hazard stripe below */
-/* Fixed height, so the bar is NOT driven by its tallest child. Without this a 48px power
-   button pushes the bar to 64px and every page loses 10px of dial height — and the dials
-   here are height-limited, so that comes straight off them. */
+/* Keep the usual 46px row, but let whole groups wrap when the status text and
+   safety controls cannot share the available width. Every control stays reachable. */
 /* The bar spans the full glass and pads its own content clear of the notch, so its background
    and the hazard stripe under it reach both edges. Height grows by the top inset for the same
    reason: the status bar sits over the bar's own colour instead of over a black strip. */
 #topbar{ max-width:none; width:100%; margin:0; flex:none;
-  height:calc(46px + env(safe-area-inset-top, 0px));
+  min-height:calc(46px + env(safe-area-inset-top, 0px)); height:auto; flex-wrap:wrap; gap:4px 8px;
   padding:env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0
           calc(var(--sp-5) + env(safe-area-inset-left, 0px));
   background:var(--rc-panel); border-bottom:1px solid var(--rc-line); position:relative; z-index:10; }
@@ -1948,7 +1955,7 @@ body{
 /* Always-visible status group in the topbar. margin-right:auto parks it just after the
    logo instead of centring it, so its width changing (ESP32 SILENT 12.4s is far wider than
    ESP32 0.2s) cannot shove the power button around. */
-#topbarStatus{ display:flex; align-items:center; gap:var(--sp-2); margin-left:14px; margin-right:auto;
+#topbarStatus{ display:flex; flex-wrap:wrap; min-width:0; align-items:center; gap:var(--sp-2); margin-left:14px; margin-right:auto;
   cursor:pointer; padding:var(--sp-1); margin-top:-3px; margin-bottom:-3px; border-radius:var(--r-pill);
   border:1px solid transparent; }
 /* The group is tappable, so give it a hover cue — the chips alone look inert. The negative
@@ -2003,6 +2010,7 @@ body{
   font-size:var(--fs-xs); font-weight:700; letter-spacing:.12em; line-height:1; white-space:nowrap; }
 #benchModeBtn small{ font:700 8px/1.1 'Titillium Web',sans-serif; letter-spacing:.06em; }
 #benchModeBtn.on{ background:var(--rc-red); color:#fff; box-shadow:0 0 12px var(--rc-red-glow); }
+#benchModeBtn.requested{ border-color:#f0a030; background:#2a1a09; color:#f0a030; }
 #benchModeBtn.unavailable{ border-color:var(--rc-line-hard); background:var(--rc-raised); color:var(--rc-label-dim); }
 #benchModeBtn:disabled{ cursor:not-allowed; opacity:.72; }
 @keyframes rcPulse{ 0%,100%{opacity:1;} 50%{opacity:.25;} }
@@ -2178,11 +2186,12 @@ body{
    implicit 1fr track, so the auto-distribution of whichever panes are visible is unchanged.
    That first track is the mission wheel, which needs a name's width and no more — the width
    the old 8-button grid was taking is what the pad gains. */
-.rc-mission{ display:grid; grid-auto-flow:column; grid-template-columns:126px; grid-auto-columns:1fr; gap:var(--sp-3); height:100%; min-height:0; }
+.rc-mission{ display:grid; grid-auto-flow:column; grid-template-columns:126px; grid-auto-columns:minmax(0,1fr); gap:var(--sp-3); height:100%; min-height:0; }
 .rc-mispanel{ overflow:hidden; }   /* the wheel scrolls itself; the pane must not */
-.rc-mpanel{ padding:var(--sp-3) var(--sp-4); display:flex; flex-direction:column; gap:var(--sp-3); min-height:0; overflow-y:auto; }
-.bench-throttle-inputs{ display:grid; grid-template-columns:minmax(90px,1fr) 58px; gap:var(--sp-2); align-items:center; }
-.bench-throttle-inputs input[type=range]{ width:100%; accent-color:var(--rc-red); }
+.rc-mpanel{ padding:var(--sp-3) var(--sp-4); display:flex; flex-direction:column; gap:var(--sp-3); min-height:0; min-width:0; overflow-y:auto; }
+.rc-mpanel .algo-dropdown{ min-width:0; max-width:100%; }
+.bench-throttle-inputs{ display:grid; grid-template-columns:minmax(0,1fr) 58px; gap:var(--sp-2); align-items:center; }
+.bench-throttle-inputs input[type=range]{ min-width:0; width:100%; accent-color:var(--rc-red); }
 .bench-throttle-inputs input[type=number]{ width:100%; min-width:0; padding:7px 5px; border:1px solid var(--rc-line-hard);
   background:#09090a; color:var(--rc-white); font:600 var(--fs-sm)/1 'Share Tech Mono',monospace; text-align:right; }
 .bench-throttle-inputs input:disabled{ opacity:.45; cursor:not-allowed; }
@@ -2220,7 +2229,7 @@ body{
    of the readout column and the pad's track collapsed to nothing. Basis 0 makes the slot take
    the row's free space regardless of what is inside it, which is what gives the pad a track to
    be as wide as it is tall. */
-.rc-joypane #rcJoySlot{ flex:1 1 0; min-height:0; min-width:0; display:flex; align-items:stretch; justify-content:center; }
+.rc-joypane #rcJoySlot{ flex:1 1 0; min-height:0; min-width:0; display:flex; align-items:stretch; justify-content:center; container-type:size; }
 /* 430px = the 140px control column, its gap, and enough left for the pad to be at least as
    wide as the pane is tall — below that, seating them side by side would shrink the pad. */
 /* Pad on the RIGHT, everything else in ONE column to its left. The pad is the only thing on
@@ -2237,23 +2246,14 @@ body{
 @container (min-width:430px){
   .rc-joypane .js-widget.on{
     /* 172px, not 150: at 150 the readouts clipped their own words ("CENTRED" came out "CE…"). */
-    /* Three tracks: an empty flexible one, the controls, then the pad. The pad's track is
-       auto and its wrapper is a square sized by the row height, so the leftover width of the
-       pane collects in track 1 — on the far side from the hand — instead of opening a gap
-       between the controls and the pad. */
-    display:grid; grid-template-columns:1fr 172px auto; grid-template-rows:auto auto auto auto 1fr;
+    /* The controls keep their readable width; the pad uses the remaining track. */
+    display:grid; grid-template-columns:172px minmax(0,1fr); grid-template-rows:auto auto auto auto 1fr;
     column-gap:var(--sp-3); row-gap:var(--sp-2); }
-  /* align-self:stretch is load-bearing against the row sizing above, which otherwise
-     shrink-wraps this to its content — and its content is a pad sized as a percentage of it,
-     so the pair collapses to nothing (measured: a 2x2 pad). */
-  /* The pad is positioned against this box rather than sized as a percentage of it. Its own
-     rule is height:100% + aspect-ratio, and inside a grid track Safari resolves that height
-     against a box it has not finished sizing: on an iPhone the pad came out full height and
-     about 2px wide, a vertical line with the ACCEL/BRAKE/LEFT/RIGHT labels piled on top of
-     each other. top/bottom give it a definite height with no percentage involved, and
-     aspect-ratio then derives the width, which every engine agrees on. */
-  .rc-joypane .js-padwrap{ grid-column:3; grid-row:1 / -1; min-height:0; min-width:0;
-    align-self:stretch; position:relative; aspect-ratio:1; }
+  /* Bound both square dimensions by the slot: full panel height alone can put
+     the right edge outside a narrow pane on a tall desktop window. */
+  .rc-joypane .js-padwrap{ grid-column:2; grid-row:1 / -1; min-height:0; min-width:0;
+    width:min(100cqh, calc(100cqw - 172px - var(--sp-3)));
+    align-self:center; justify-self:end; position:relative; aspect-ratio:1; }
   /* Fills the wrapper, which is the square. Flush against the wrapper's right edge, which is
      the pane's right edge — the whole point of moving it here is to put it under the thumb. */
   .rc-joypane .js-pad{ position:absolute; inset:0;
@@ -2262,7 +2262,7 @@ body{
   .rc-joypane .js-take,
   .rc-joypane .js-readout,
   .rc-joypane #rcGpSlot,
-  .rc-joypane .pid-open{ grid-column:2; align-self:start; }
+  .rc-joypane .pid-open{ grid-column:1; align-self:start; }
   /* One per row rather than auto-fit: the column is 172px and auto-fit's 150px minimum would
      keep them side by side at exactly the width where they stop fitting. */
   .rc-joypane .js-readout{ grid-template-columns:1fr; }
@@ -2839,8 +2839,15 @@ body{
         </div>
         <div class="rc-panel rc-mpanel" id="rcCtrlPane">
           <span class="rc-label">Controls / safety</span>
+          <button class="rc-i" type="button" aria-label="Explain Start autonomous and Remote control"
+                  aria-controls="rcControlInfo" aria-expanded="false" onclick="rcPop('rcControlInfo')">i</button>
+          <div class="rc-pop" id="rcControlInfo" role="note" onclick="rcPop('rcControlInfo')">
+            Under <b>Mission</b>, select Auto or an autonomous event before using <b>Start autonomous</b>.
+            Remote is a separate Mission mode and does not use this button: select Remote, then hold and drag its control pad.
+            Releasing the pad sends zero steering and throttle.
+          </div>
           <div id="safetyReason" class="safety-reason" role="status" aria-live="polite">Waiting for safety status</div>
-          <div class="ctrl-row"><button class="ctrl-btn go" data-st="running" onclick="wsSend({action:'set_state',state:'running'})">Start</button><button class="ctrl-btn stop" data-st="idle" onclick="wsSend({action:'set_state',state:AUTONOMOUS_MISSIONS.has(currentMission)?'idle':'ebs'})">Stop</button><button class="ctrl-btn" onclick="wsSend({action:'set_state',state:'reset'})">Reset safety</button><button class="ctrl-btn restart" onclick="rcConfirm('Restart kart-brain', 'The ROS stack restarts and telemetry stops for a few seconds. The Orin itself stays up.', { okText: 'Restart' }).then(ok =&gt; { if (ok) wsSend({ action: 'restart' }); })">Restart</button></div>
+          <div class="ctrl-row"><button class="ctrl-btn go" data-st="running" onclick="wsSend({action:'set_state',state:'running'})">Start autonomous</button><button class="ctrl-btn stop" data-st="idle" onclick="wsSend({action:'set_state',state:AUTONOMOUS_MISSIONS.has(currentMission)?'idle':'ebs'})">Stop</button><button class="ctrl-btn" onclick="wsSend({action:'set_state',state:'reset'})">Reset safety</button><button class="ctrl-btn restart" onclick="rcConfirm('Restart kart-brain', 'The ROS stack restarts and telemetry stops for a few seconds. The Orin itself stays up.', { okText: 'Restart' }).then(ok =&gt; { if (ok) wsSend({ action: 'restart' }); })">Restart</button></div>
         </div>
         <div class="rc-panel rc-mpanel rc-joypane" id="rcJoyPane" style="display:none">
           <span class="rc-label">Remote control</span>
@@ -3672,8 +3679,12 @@ if (new URLSearchParams(location.search).has('demo')) {
       mission: demoMission, state: demoState, safety_reason: demoState === 'ebs' ? 'Emergency stop latched — reset safety before starting' : '',
       as_state: demoState === 'running' ? 'AS_DRIVING' : (demoState === 'ebs' ? 'AS_EMERGENCY_BRAKE' : 'AS_READY'),
       bench_mode_available: true, bench_mode_enabled: demoBenchEnabled,
-      bench_mode_reason: demoBenchEnabled ? 'Tank-pressure bypass active' : 'Ready while stopped',
+      bench_mode_active: demoBenchEnabled && demoMission === 'autonomous',
+      bench_mode_reason: demoBenchEnabled
+        ? (demoMission === 'autonomous' ? 'Tank-pressure bypass active' : 'Select Autonomous and steering None')
+        : 'Ready while stopped',
       bench_throttle_cap_percent: 30, bench_throttle_percent: demoBenchThrottle,
+      bench_pressure_fault: true,
     };
     // mirror the WebSocket handler: on a mission change, re-run the show/hide UI
     if (d.mission !== currentMission) { currentMission = d.mission; updateJoystickWidget(); updateMissionUI(); }
