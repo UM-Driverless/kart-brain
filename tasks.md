@@ -38,6 +38,8 @@ the archive whole, only once its last step closes.
   Before rolling calibration, verify the motor Hall supply with actuator power isolated.
   Orin SSH works via orin-remote on 2026-10-08, but another active chat owns bench
   control verification: do not restart its ROS processes without coordination.
+  Commit d9b6c54 is pulled on Orin; installed module/config resolve to the updated
+  source and all 19 Hall tests pass there. Live dashboard restart remains pending.
   VM deployment is still blocked by SSH timeout to utm (192.168.64.3).
 
 - [ ] **Reconcile stale environment pointers.** README lists the dashboard LAN port
