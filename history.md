@@ -2521,3 +2521,10 @@ Deployment: c698162 built successfully on Orin and 843d17c supplied the specific
 Rubén found that a solid red rejected button looked activated. Rejected actions now pulse brightness three times over 2.1 seconds, then retain a dark background, red outline and readable reason. Repeated taps restart the pulse. Reduced-motion users get a static dashed outline. The dashboard frame and shared visibility rule reflect this distinction.
 
 Verification: 15 JavaScript action/mission tests passed. Browser computed style confirmed actionRejectedPulse, 0.7-second duration and three iterations with motion enabled. The reduced-motion rendering showed the static dashed error outline.
+
+
+## 2026-10-09 — Complete interrupted blink deployment verification
+
+The retained deployment command completed successfully: Orin pulled 4bd6108, restarted kart-brain, removed the temporary serial-reset override and reported active. A fresh SSH connection then failed, and the public page returned Cloudflare Tunnel error 1033. Current live-browser verification is therefore blocked by kart connectivity, rather than a known dashboard failure.
+
+Local browser follow-up verified the 844×390 layout with motion enabled: actionRejectedPulse has three iterations, the pulse brightness rises above 2.9, then returns to the dark background rgb(36,16,20) and red outline rgb(255,48,72). A second rejected tap restarts the pulse. The reason stays readable after the pulse ends. No remote actuator command was sent.

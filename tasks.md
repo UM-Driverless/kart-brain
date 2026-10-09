@@ -261,6 +261,7 @@ http://<orin-ip>:9090
 
 ## Blocked
 
+- [⏸ Kart offline] **Verify rejected-button blinking on the live dashboard.** Orin deployed 4bd6108 and reported kart-brain active. On 2026-10-09 fresh SSH failed and the public tunnel returned error 1033. Once connected, tap Start in Manual and check three pulses followed by a dark red outline and persistent explanation; this guarded tap sends no Start command. Local browser verification is complete.
 - [⏸ VM offline] **Deploy emergency mission selection, button feedback and dashboard safety controls to UTM.** `ssh utm` timed out on 2026-10-08; pull `dev` and rebuild `kb_dashboard` and `kart_control` with `--symlink-install` when the VM is reachable. Orin verification is recorded in history.md.
 
 - [⏸ Manual confirmation] **Activate 30 Hz dashboard refresh.** Commit 9821e6f is pushed and pulled on Orin; both socket cadence tests pass there. Restart the server after Rubén confirms Manual, then measure live WebSocket cadence. Hall source still needs a separate firmware rate increase.
